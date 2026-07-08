@@ -8,27 +8,27 @@
 
 // ─── API configuration ────────────────────────────────
 // Change this one value to point the whole UI at a deployed backend.
-const API_BASE_URL = 'http://localhost:4000';
+const API_BASE_URL = 'https://bot-sentinel.up.railway.app';
 
 // ─── Active poll tracker (cleared on every navigation) ─
-let _activePoll     = null;
-let _relativeTimer  = null;   // LM page: updates relative timestamps
-let _lmRenderedIds  = new Set(); // LM page: tracks which alert IDs are in the DOM
-let _lmFilter       = 'all';  // LM page: current severity filter
-let _pageParams     = {};      // params passed to the current page (e.g. alertId)
+let _activePoll = null;
+let _relativeTimer = null;   // LM page: updates relative timestamps
+let _lmRenderedIds = new Set(); // LM page: tracks which alert IDs are in the DOM
+let _lmFilter = 'all';  // LM page: current severity filter
+let _pageParams = {};      // params passed to the current page (e.g. alertId)
 
 // ─── Page Registry ────────────────────────────────────
 const PAGES = {
-  'overview':       { label: 'Overview',       render: renderOverview      },
+  'overview': { label: 'Overview', render: renderOverview },
   'agent-identity': { label: 'Agent Identity', render: renderAgentIdentity },
-  'live-monitoring':{ label: 'Live Monitoring',render: renderLiveMonitoring},
-  'verification':   { label: 'Verification',   render: renderVerification  },
+  'live-monitoring': { label: 'Live Monitoring', render: renderLiveMonitoring },
+  'verification': { label: 'Verification', render: renderVerification },
 };
 
 // ─── DOM References ───────────────────────────────────
 const breadcrumbCurrent = document.getElementById('breadcrumb-current');
-const pageContainer     = document.getElementById('page-container');
-const navItems          = document.querySelectorAll('.nav-item');
+const pageContainer = document.getElementById('page-container');
+const navItems = document.querySelectorAll('.nav-item');
 
 // ─── Navigation ───────────────────────────────────────
 function navigateTo(pageId, params = {}) {
@@ -36,15 +36,15 @@ function navigateTo(pageId, params = {}) {
   _pageParams = params;
 
   // Stop any page-level timers from the previous page
-  if (_activePoll)   { clearInterval(_activePoll);   _activePoll   = null; }
-  if (_relativeTimer){ clearInterval(_relativeTimer); _relativeTimer = null; }
+  if (_activePoll) { clearInterval(_activePoll); _activePoll = null; }
+  if (_relativeTimer) { clearInterval(_relativeTimer); _relativeTimer = null; }
   _lmRenderedIds = new Set();
-  _lmFilter      = 'all';
+  _lmFilter = 'all';
 
   navItems.forEach(btn => btn.classList.toggle('active', btn.dataset.page === pageId));
   breadcrumbCurrent.textContent = PAGES[pageId].label;
 
-  pageContainer.style.opacity   = '0';
+  pageContainer.style.opacity = '0';
   pageContainer.style.transform = 'translateY(8px)';
 
   requestAnimationFrame(() => {
@@ -54,8 +54,8 @@ function navigateTo(pageId, params = {}) {
 
     requestAnimationFrame(() => {
       pageContainer.style.transition = 'opacity 220ms ease, transform 220ms ease';
-      pageContainer.style.opacity    = '1';
-      pageContainer.style.transform  = 'translateY(0)';
+      pageContainer.style.opacity = '1';
+      pageContainer.style.transform = 'translateY(0)';
     });
   });
 
@@ -95,24 +95,26 @@ function el(tag, attrs = {}, ...children) {
 }
 
 // ─── String utilities ─────────────────────────────────
-function escHTML(s)  { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function escAttr(s)  { return String(s??'').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function shortAddr(full, f=6, b=5) { return (!full||full.length<=f+b+1) ? (full||'—') : `${full.slice(0,f)}…${full.slice(-b)}`; }
-function shortHash(h, f=6, b=4)   { return (!h||h.length<=f+b+1) ? (h||'—') : `${h.slice(0,f)}…${h.slice(-b)}`; }
+function escHTML(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function shortAddr(full, f = 6, b = 5) { return (!full || full.length <= f + b + 1) ? (full || '—') : `${full.slice(0, f)}…${full.slice(-b)}`; }
+function shortHash(h, f = 6, b = 4) { return (!h || h.length <= f + b + 1) ? (h || '—') : `${h.slice(0, f)}…${h.slice(-b)}`; }
 function formatUTC(iso) {
   if (!iso) return '—';
-  try { return new Date(iso).toUTCString().replace(' GMT',' UTC'); } catch { return iso; }
+  try { return new Date(iso).toUTCString().replace(' GMT', ' UTC'); } catch { return iso; }
 }
 function formatShortDate(iso) {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
-    return d.toLocaleString('en-GB', { year:'numeric', month:'short', day:'2-digit',
-      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false });
+    return d.toLocaleString('en-GB', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
   } catch { return iso; }
 }
 function humanizeType(type) {
-  return String(type||'').replace(/([A-Z])/g, ' $1').trim();
+  return String(type || '').replace(/([A-Z])/g, ' $1').trim();
 }
 function capitalise(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
 
@@ -130,12 +132,12 @@ function checkSvg() {
 }
 
 // ─── Shared card HTML (placeholder pages) ────────────
-function cardHTML(label, value, sub, trend, isWarning=false) {
+function cardHTML(label, value, sub, trend, isWarning = false) {
   return `<div class="placeholder-card">
     <div class="accent-line"></div>
     <div class="card-label">${label}</div>
-    <div class="card-value" style="${isWarning?'color:var(--warn-amber)':''}">${value}</div>
-    ${sub   ? `<div class="card-mono">${sub}</div>` : ''}
+    <div class="card-value" style="${isWarning ? 'color:var(--warn-amber)' : ''}">${value}</div>
+    ${sub ? `<div class="card-mono">${sub}</div>` : ''}
     ${trend ? `<div class="card-trend">${trend}</div>` : ''}
   </div>`;
 }
@@ -271,7 +273,7 @@ function renderOverview() {
           </div>
           <div class="ov-events-list" id="ov-events-list">
             <!-- skeleton rows -->
-            ${[1,2,3].map(() => `
+            ${[1, 2, 3].map(() => `
               <div class="ov-event-row ov-event-skeleton">
                 <div class="ov-skeleton" style="width:28px;height:28px;border-radius:50%"></div>
                 <div style="display:flex;flex-direction:column;gap:6px">
@@ -292,9 +294,9 @@ function renderOverview() {
   `;
 
   // Wire hero buttons
-  page.querySelector('#ov-btn-dashboard').addEventListener('click',  () => navigateTo('agent-identity'));
+  page.querySelector('#ov-btn-dashboard').addEventListener('click', () => navigateTo('agent-identity'));
   page.querySelector('#ov-btn-monitoring').addEventListener('click', () => navigateTo('live-monitoring'));
-  page.querySelector('#ov-view-all').addEventListener('click',       () => navigateTo('live-monitoring'));
+  page.querySelector('#ov-view-all').addEventListener('click', () => navigateTo('live-monitoring'));
 
   // Initial load + 6s poll
   loadOverviewData();
@@ -311,7 +313,7 @@ async function loadOverviewData() {
       fetch(`${API_BASE_URL}/api/alerts`),
     ]);
     const identity = iRes.ok ? await iRes.json() : null;
-    const alerts   = aRes.ok ? await aRes.json() : [];
+    const alerts = aRes.ok ? await aRes.json() : [];
     updateOverviewStats(identity, alerts);
     updateOverviewEvents(alerts);
   } catch (err) {
@@ -330,7 +332,7 @@ function updateOverviewStats(identity, alerts) {
   // Threats
   const threatsVal = document.getElementById('ov-threats-val');
   const threatsSub = document.getElementById('ov-threats-sub-txt');
-  const highCount  = Array.isArray(alerts) ? alerts.filter(a => a.severity === 'high').length : 0;
+  const highCount = Array.isArray(alerts) ? alerts.filter(a => a.severity === 'high').length : 0;
   if (threatsVal) threatsVal.textContent = Array.isArray(alerts) ? String(alerts.length) : '—';
   if (threatsSub) threatsSub.textContent = `${highCount} high severity`;
 }
@@ -382,18 +384,18 @@ function updateOverviewEvents(alerts) {
 
 function buildEventRow(alert) {
   const sev = (alert.severity || 'info').toLowerCase();
-  const sevClass  = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
-  const sevLabel  = capitalise(sev);
+  const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
+  const sevLabel = capitalise(sev);
   const humanType = humanizeType(alert.type);
-  const hash      = alert.txHash || '';
-  const shortH    = shortHash(hash);
+  const hash = alert.txHash || '';
+  const shortH = shortHash(hash);
 
   // Icon per severity
   const icon = sev === 'high'
     ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
     : sev === 'medium'
-    ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
-    : `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 5.5V7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="9.2" r=".6" fill="currentColor"/></svg>`;
+      ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
+      : `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 5.5V7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="9.2" r=".6" fill="currentColor"/></svg>`;
 
   return `
     <div class="ov-event-row ${sevClass}">
@@ -419,17 +421,17 @@ function buildEventRow(alert) {
           ${hash ? `<button class="ov-icon-copy-btn" data-copy="${escAttr(hash)}" aria-label="Copy tx hash">${copySvg()}</button>` : ''}
         </span>
       </div>
-      <button class="ov-view-proof-btn" data-id="${escAttr(alert.id||'')}">View Proof</button>
+      <button class="ov-view-proof-btn" data-id="${escAttr(alert.id || '')}">View Proof</button>
     </div>`;
 }
 
 function showOverviewOffline() {
-  const nodesVal   = document.getElementById('ov-nodes-val');
-  const nodesSub   = document.getElementById('ov-nodes-sub-txt');
+  const nodesVal = document.getElementById('ov-nodes-val');
+  const nodesSub = document.getElementById('ov-nodes-sub-txt');
   const threatsVal = document.getElementById('ov-threats-val');
   const threatsSub = document.getElementById('ov-threats-sub-txt');
-  if (nodesVal)   nodesVal.textContent   = '—';
-  if (nodesSub)   nodesSub.textContent   = 'agent offline';
+  if (nodesVal) nodesVal.textContent = '—';
+  if (nodesSub) nodesSub.textContent = 'agent offline';
   if (threatsVal) threatsVal.textContent = '—';
   if (threatsSub) threatsSub.textContent = '—';
   const list = document.getElementById('ov-events-list');
@@ -480,10 +482,10 @@ function renderAgentIdentity() {
         </div>
         <div class="ai-divider-top"></div>
         <div class="ai-rows" id="ai-rows">
-          ${['Agent Address','Contract Address','Network','Chain ID','Started At'].map(l => `
+          ${['Agent Address', 'Contract Address', 'Network', 'Chain ID', 'Started At'].map(l => `
             <div class="ai-row">
               <span class="ai-row-label">${l}</span>
-              <span class="ai-skeleton" style="width:${l==='Network'?100:160}px"></span>
+              <span class="ai-skeleton" style="width:${l === 'Network' ? 100 : 160}px"></span>
               <span style="width:120px"></span>
             </div>`).join('')}
         </div>
@@ -547,11 +549,11 @@ function renderAgentIdentity() {
 
 function populateIdentityPage(d) {
   const rows = [
-    { label:'Agent Address',    value:shortAddr(d.agentAddress),    full:d.agentAddress,    mono:true,  url:d.explorerAgentUrl    },
-    { label:'Contract Address', value:shortAddr(d.contractAddress), full:d.contractAddress, mono:true,  url:d.explorerContractUrl },
-    { label:'Network',          value:d.network||'—',               full:d.network,         mono:false, url:null                  },
-    { label:'Chain ID',         value:d.chainId!=null?String(d.chainId):'—', full:d.chainId!=null?String(d.chainId):null, mono:true, url:null },
-    { label:'Started At',       value:formatUTC(d.startedAt),       full:d.startedAt,       mono:true,  url:null                  },
+    { label: 'Agent Address', value: shortAddr(d.agentAddress), full: d.agentAddress, mono: true, url: d.explorerAgentUrl },
+    { label: 'Contract Address', value: shortAddr(d.contractAddress), full: d.contractAddress, mono: true, url: d.explorerContractUrl },
+    { label: 'Network', value: d.network || '—', full: d.network, mono: false, url: null },
+    { label: 'Chain ID', value: d.chainId != null ? String(d.chainId) : '—', full: d.chainId != null ? String(d.chainId) : null, mono: true, url: null },
+    { label: 'Started At', value: formatUTC(d.startedAt), full: d.startedAt, mono: true, url: null },
   ];
 
   const rowsEl = document.getElementById('ai-rows');
@@ -559,10 +561,10 @@ function populateIdentityPage(d) {
   rowsEl.innerHTML = rows.map(r => `
     <div class="ai-row">
       <span class="ai-row-label">${r.label}</span>
-      <span class="${r.mono?'ai-row-value':'ai-row-value plain'}" title="${escAttr(r.full||'')}">${escHTML(r.value)}</span>
+      <span class="${r.mono ? 'ai-row-value' : 'ai-row-value plain'}" title="${escAttr(r.full || '')}">${escHTML(r.value)}</span>
       <span class="ai-row-actions">
         ${r.full ? `<button class="ai-copy-btn" data-copy="${escAttr(r.full)}" aria-label="Copy ${r.label}">${copySvg()}</button>` : ''}
-        ${r.url  ? `<a class="ai-explorer-link" href="${escAttr(r.url)}" target="_blank" rel="noopener">View on Explorer <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M5 2H8V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
+        ${r.url ? `<a class="ai-explorer-link" href="${escAttr(r.url)}" target="_blank" rel="noopener">View on Explorer <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M5 2H8V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
       </span>
     </div>`).join('');
 
@@ -575,9 +577,9 @@ function populateIdentityPage(d) {
     });
   });
 
-  const netEl   = document.getElementById('stat-network');
+  const netEl = document.getElementById('stat-network');
   const nodesEl = document.getElementById('stat-nodes');
-  if (netEl)   netEl.textContent   = d.network || '—';
+  if (netEl) netEl.textContent = d.network || '—';
   if (nodesEl) nodesEl.textContent = d.nodesMonitored != null ? String(d.nodesMonitored) : '—';
 }
 
@@ -599,14 +601,14 @@ function showIdentityError(msg) {
 
 // Verbose type labels matching the reference image
 const LM_TYPE_MAP = {
-  'ProofFromInactiveNode':  'Proof Submitted From Inactive Node',
+  'ProofFromInactiveNode': 'Proof Submitted From Inactive Node',
   'ImplausibleOutputClaim': 'Implausible Output Claim Detected',
-  'ImplausibleOutputFlag':  'Implausible Output Claim Detected',
-  'NodeRegistered':         'Node Registered On-Chain',
-  'NodeDeactivated':        'Node Deactivated',
-  'NodeReactivated':        'Node Reactivated',
-  'ProofSubmitted':         'Proof Submitted On-Chain',
-  'NodeHeartbeat':          'Node Heartbeat Verified',
+  'ImplausibleOutputFlag': 'Implausible Output Claim Detected',
+  'NodeRegistered': 'Node Registered On-Chain',
+  'NodeDeactivated': 'Node Deactivated',
+  'NodeReactivated': 'Node Reactivated',
+  'ProofSubmitted': 'Proof Submitted On-Chain',
+  'NodeHeartbeat': 'Node Heartbeat Verified',
 };
 function humanizeVerbose(type) {
   return LM_TYPE_MAP[type] || humanizeType(type);
@@ -621,11 +623,11 @@ function relativeTime(iso) {
   const diff = Date.now() - new Date(iso).getTime();
   if (diff < 0) return 'just now';
   const s = Math.floor(diff / 1000);
-  if (s < 60)  return `${s} second${s !== 1 ? 's' : ''} ago`;
+  if (s < 60) return `${s} second${s !== 1 ? 's' : ''} ago`;
   const m = Math.floor(s / 60);
-  if (m < 60)  return `${m} minute${m !== 1 ? 's' : ''} ago`;
+  if (m < 60) return `${m} minute${m !== 1 ? 's' : ''} ago`;
   const h = Math.floor(m / 60);
-  if (h < 24)  return `${h} hour${h !== 1 ? 's' : ''} ago`;
+  if (h < 24) return `${h} hour${h !== 1 ? 's' : ''} ago`;
   const d = Math.floor(h / 24);
   return `${d} day${d !== 1 ? 's' : ''} ago`;
 }
@@ -733,7 +735,7 @@ function renderLiveMonitoring() {
       </div>
       <div class="lm-feed-list" id="lm-feed-list">
         <!-- skeleton placeholder -->
-        ${[1,2,3].map(() => `
+        ${[1, 2, 3].map(() => `
           <div class="lm-alert-card lm-skel-row">
             <div class="lm-skel" style="width:36px;height:36px;border-radius:50%;flex-shrink:0"></div>
             <div style="display:flex;flex-direction:column;gap:7px;flex:1">
@@ -756,7 +758,7 @@ function renderLiveMonitoring() {
 
   // Initial load + poll
   loadLmData();
-  _activePoll    = setInterval(loadLmData, 6000);
+  _activePoll = setInterval(loadLmData, 6000);
   // Update relative timestamps without re-fetching
   _relativeTimer = setInterval(updateLmRelTimes, 15000);
 
@@ -770,7 +772,7 @@ async function loadLmData() {
       fetch(`${API_BASE_URL}/api/alerts`),
     ]);
     const identity = iRes.ok ? await iRes.json() : null;
-    const alerts   = aRes.ok ? await aRes.json() : [];
+    const alerts = aRes.ok ? await aRes.json() : [];
     updateLmStats(identity, alerts);
     updateLmFeed(alerts);
   } catch (err) {
@@ -780,12 +782,12 @@ async function loadLmData() {
 }
 
 function updateLmStats(identity, alerts) {
-  const nodesEl    = document.getElementById('lm-nodes-val');
-  const alertsEl   = document.getElementById('lm-alerts-val');
+  const nodesEl = document.getElementById('lm-nodes-val');
+  const alertsEl = document.getElementById('lm-alerts-val');
   const criticalEl = document.getElementById('lm-critical-val');
   const high = Array.isArray(alerts) ? alerts.filter(a => a.severity === 'high').length : 0;
-  if (nodesEl)    nodesEl.textContent    = identity?.nodesMonitored ?? '—';
-  if (alertsEl)   alertsEl.textContent   = Array.isArray(alerts) ? String(alerts.length) : '—';
+  if (nodesEl) nodesEl.textContent = identity?.nodesMonitored ?? '—';
+  if (alertsEl) alertsEl.textContent = Array.isArray(alerts) ? String(alerts.length) : '—';
   if (criticalEl) criticalEl.textContent = String(high);
 }
 
@@ -831,24 +833,24 @@ function updateLmFeed(alerts) {
 }
 
 function buildLmCard(alert, animate) {
-  const sev      = (alert.severity || 'info').toLowerCase();
+  const sev = (alert.severity || 'info').toLowerCase();
   const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
-  const label    = sevToLabel(sev);
-  const title    = humanizeVerbose(alert.type);
-  const ts       = formatShortDate(alert.detectedAt);
-  const rel      = relativeTime(alert.detectedAt);
+  const label = sevToLabel(sev);
+  const title = humanizeVerbose(alert.type);
+  const ts = formatShortDate(alert.detectedAt);
+  const rel = relativeTime(alert.detectedAt);
 
   // Severity icon
   const iconInner = sev === 'high'
     ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
     : sev === 'medium'
-    ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
-    : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 6V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11" r=".7" fill="currentColor"/></svg>`;
+      ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
+      : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 6V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11" r=".7" fill="currentColor"/></svg>`;
 
   const div = document.createElement('div');
   div.className = `lm-alert-card ${sevClass}${animate ? ' lm-card-new' : ''}`;
   div.dataset.sev = sev;
-  div.dataset.id  = alert.id || '';
+  div.dataset.id = alert.id || '';
 
   div.innerHTML = `
     <div class="lm-alert-icon ${sevClass}">${iconInner}</div>
@@ -858,12 +860,12 @@ function buildLmCard(alert, animate) {
     </div>
     <div class="lm-alert-time">
       <span class="mono lm-alert-ts">${escHTML(ts)}</span>
-      <span class="lm-alert-rel" data-detected="${escAttr(alert.detectedAt||'')}">${escHTML(rel)}</span>
+      <span class="lm-alert-rel" data-detected="${escAttr(alert.detectedAt || '')}">${escHTML(rel)}</span>
     </div>
     <span class="lm-sev-pill ${sevClass}">
       <span class="lm-pill-dot ${sevClass}"></span>${escHTML(label)}
     </span>
-    <button class="lm-proof-btn" data-id="${escAttr(alert.id||'')}">
+    <button class="lm-proof-btn" data-id="${escAttr(alert.id || '')}">
       View Proof
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
         <path d="M2 9L9 2M6 2H9V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -954,9 +956,9 @@ function renderVerification() {
               </div>
               <span class="vp-panel-title">On-Chain Verification</span>
             </div>
-            <div class="vp-rows">${[1,2,3,4,5].map(() =>
-              `<div class="vp-row"><span class="lm-skel" style="width:110px;height:12px"></span><span class="lm-skel" style="width:180px;height:12px"></span></div>`
-            ).join('')}</div>
+            <div class="vp-rows">${[1, 2, 3, 4, 5].map(() =>
+    `<div class="vp-row"><span class="lm-skel" style="width:110px;height:12px"></span><span class="lm-skel" style="width:180px;height:12px"></span></div>`
+  ).join('')}</div>
           </div>
           <div class="vp-right-panel">
             <div class="vp-panel-header">
@@ -968,9 +970,9 @@ function renderVerification() {
               <span class="vp-panel-title">AI Security Analysis</span>
               <span class="vp-gemini-tag">&#10022; Generated by Gemini</span>
             </div>
-            <div class="vp-report-body">${[1,2,3].map(() =>
-              `<div class="lm-skel" style="width:100%;height:13px;margin-bottom:8px"></div>`
-            ).join('')}</div>
+            <div class="vp-report-body">${[1, 2, 3].map(() =>
+    `<div class="lm-skel" style="width:100%;height:13px;margin-bottom:8px"></div>`
+  ).join('')}</div>
           </div>
         </div>
       </div>
@@ -1033,24 +1035,24 @@ function renderVerification() {
         const content = document.getElementById('vp-content');
         if (content && found) renderVpDetail(content, found);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, 6000);
 
   return page;
 }
 
 function renderVpDetail(container, alert) {
-  const sev      = (alert.severity || 'info').toLowerCase();
+  const sev = (alert.severity || 'info').toLowerCase();
   const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
   const sevLabel = sevToLabel(sev);
 
   // ── Fixed rows ───────────────────────────────────────
   const fixedRows = [
-    { label: 'Alert Type',        value: alert.type || '—',                       mono: false, full: alert.type,     tag: sevClass },
-    { label: 'Node ID',           value: alert.nodeId || '—',                     mono: true,  full: alert.nodeId    },
-    { label: 'Transaction Hash',  value: shortHash(alert.txHash, 10, 6),          mono: true,  full: alert.txHash    },
-    { label: 'Detected At',       value: formatUTC(alert.detectedAt),             mono: true,  full: alert.detectedAt},
-    { label: 'Severity',          value: sevLabel,                                mono: false, full: null, sevClass  },
+    { label: 'Alert Type', value: alert.type || '—', mono: false, full: alert.type, tag: sevClass },
+    { label: 'Node ID', value: alert.nodeId || '—', mono: true, full: alert.nodeId },
+    { label: 'Transaction Hash', value: shortHash(alert.txHash, 10, 6), mono: true, full: alert.txHash },
+    { label: 'Detected At', value: formatUTC(alert.detectedAt), mono: true, full: alert.detectedAt },
+    { label: 'Severity', value: sevLabel, mono: false, full: null, sevClass },
   ];
 
   // ── Dynamic detail rows from alert.details ───────────
@@ -1073,7 +1075,7 @@ function renderVpDetail(container, alert) {
       // Severity — pill badge
       valueHtml = `<span class="vp-sev-pill ${sevClass}"><span class="lm-pill-dot ${sevClass}"></span>${escHTML(r.value)}</span>`;
     } else {
-      valueHtml = `<span class="${r.mono ? 'mono vp-mono-val' : 'vp-plain-val'}" title="${escAttr(r.full||'')}">${escHTML(r.value)}</span>`;
+      valueHtml = `<span class="${r.mono ? 'mono vp-mono-val' : 'vp-plain-val'}" title="${escAttr(r.full || '')}">${escHTML(r.value)}</span>`;
     }
     const copyBtn = r.full
       ? `<button class="vp-copy-btn" data-copy="${escAttr(r.full)}" aria-label="Copy ${r.label}">${copySvg()}</button>`
@@ -1159,7 +1161,7 @@ function renderVpDetail(container, alert) {
 document.getElementById('notif-btn').addEventListener('click', function () {
   const badge = document.getElementById('notif-badge');
   if (badge) {
-    badge.style.transform  = 'scale(0)';
+    badge.style.transform = 'scale(0)';
     badge.style.transition = 'transform 180ms ease';
     setTimeout(() => badge.remove(), 200);
   }
@@ -1167,17 +1169,17 @@ document.getElementById('notif-btn').addEventListener('click', function () {
 
 // ─── Sidebar footer: fetch real agent address ─────────
 async function fetchIdentity() {
-  const addrEl  = document.getElementById('operator-address');
+  const addrEl = document.getElementById('operator-address');
   const shortEl = addrEl ? addrEl.querySelector('.footer-addr') : null;
   try {
-    const res  = await fetch(`${API_BASE_URL}/api/identity`);
+    const res = await fetch(`${API_BASE_URL}/api/identity`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const full = data.agentAddress || '';
     if (!full) throw new Error('agentAddress missing');
-    const short = full.length > 11 ? `${full.slice(0,6)}…${full.slice(-5)}` : full;
+    const short = full.length > 11 ? `${full.slice(0, 6)}…${full.slice(-5)}` : full;
     if (shortEl) shortEl.textContent = short;
-    if (addrEl)  addrEl.title        = `Operator: ${full}`;
+    if (addrEl) addrEl.title = `Operator: ${full}`;
   } catch (err) {
     console.warn('[BOT Sentinel] Could not fetch identity:', err.message);
     if (shortEl) shortEl.textContent = '——';
@@ -1186,7 +1188,7 @@ async function fetchIdentity() {
 
 // ─── Boot ─────────────────────────────────────────────
 (function boot() {
-  const hash    = location.hash.replace('#', '');
+  const hash = location.hash.replace('#', '');
   const initial = PAGES[hash] ? hash : 'overview';
   navigateTo(initial);
   fetchIdentity();
