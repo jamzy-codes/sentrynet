@@ -1,0 +1,14 @@
+{
+    "name": "bot-sentinel-ui",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "start": "serve -s . -l $PORT"
+    },
+    "dependencies": {
+        "serve": "^14.2.1"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
