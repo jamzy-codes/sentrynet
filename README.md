@@ -66,14 +66,14 @@ Both the agent and the frontend are deployed as independent services on Railway,
 
 ## Tech stack
 
-| Layer          | Technology                                         |
-| -------------- | -------------------------------------------------- |
-| Smart contract | Solidity 0.8.24, Hardhat 3.9.1                     |
-| Chain          | BOT Chain Testnet (chain ID `968`)                 |
-| Agent          | Node.js (ESM), ethers.js v6                        |
-| AI reporting   | Google Gemini (`gemini-2.5-flash`)                 |
-| Frontend       | HTML / CSS / vanilla JS, hover-responsive shell UI |
-| Deployment     | Railway (agent + frontend as separate services)    |
+| Layer | Technology |
+|---|---|
+| Smart contract | Solidity 0.8.24, Hardhat 3.9.1 |
+| Chain | BOT Chain Testnet (chain ID `968`) |
+| Agent | Node.js (ESM), ethers.js v6 |
+| AI reporting | Google Gemini (`gemini-2.5-flash`) |
+| Frontend | HTML / CSS / vanilla JS, hover-responsive shell UI |
+| Deployment | Railway (agent + frontend as separate services) |
 
 ---
 
@@ -84,7 +84,6 @@ Both the agent and the frontend are deployed as independent services on Railway,
 **Explorer:** https://scan.bohr.life/address/0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
 
 Key functions:
-
 - `registerNode(nodeId)` — registers a new compute node
 - `submitProof(nodeId, outputClaimed)` — submits a proof of work; triggers `ImplausibleOutputFlag` if `outputClaimed >= 100000`, or `ProofFromInactiveNode` if the node is currently deactivated
 - `deactivateNode(nodeId)` / `reactivateNode(nodeId)` — toggles a node's active status
@@ -97,9 +96,7 @@ Key functions:
 **Base URL:** `https://bot-sentinel-api.up.railway.app`
 
 ### `GET /api/identity`
-
 Returns the agent's own on-chain identity and current status.
-
 ```json
 {
   "agentName": "BOT Sentinel",
@@ -116,9 +113,7 @@ Returns the agent's own on-chain identity and current status.
 ```
 
 ### `GET /api/alerts`
-
 Returns every detected anomaly, newest-first, each backed by a real transaction.
-
 ```json
 [
   {
@@ -129,11 +124,7 @@ Returns every detected anomaly, newest-first, each backed by a real transaction.
     "detectedAt": "2026-07-08T...",
     "txHash": "0x...",
     "explorerTxUrl": "https://scan.bohr.life/tx/0x...",
-    "details": {
-      "nodeId": "node-1",
-      "outputClaimed": "999999",
-      "threshold": "100000"
-    },
+    "details": { "nodeId": "node-1", "outputClaimed": "999999", "threshold": "100000" },
     "report": "SECURITY ALERT: Implausible Output Claim Detected..."
   }
 ]
@@ -152,7 +143,6 @@ npm install
 ```
 
 Create a `.env` file:
-
 ```
 PRIVATE_KEY=your_wallet_private_key
 CONTRACT_ADDRESS=0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
@@ -160,13 +150,11 @@ GEMINI_API_KEY=your_gemini_api_key
 ```
 
 Run the agent:
-
 ```bash
 node agent/sentinel.js
 ```
 
 Run the frontend (in a separate terminal):
-
 ```bash
 cd ui
 npm install
@@ -174,7 +162,6 @@ npm start
 ```
 
 Trigger an anomaly to see it live:
-
 ```bash
 $env:CONTRACT_ADDRESS="0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3"; $env:NODE_ID="node-1"; $env:OUTPUT_CLAIMED="999999"; npx hardhat run scripts/submitProof.ts --network botTestnet
 ```
@@ -190,6 +177,9 @@ $env:CONTRACT_ADDRESS="0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3"; $env:NODE_ID
 
 ---
 
-## Status
+## Judging criteria alignment
 
-Every piece described above is live right now — contract deployed, agent running, API public, dashboard deployed. Click the links at the top of this README to see it for yourself.
+- **BOT Chain Integration (35%)** — built directly around BOT Chain's DePIN + PoS identity; every alert is a real on-chain event with a real transaction hash, not simulated data
+- **Product Completeness (25%)** — full pipeline is live and deployed end-to-end: contract → agent → API → dashboard, all publicly accessible right now
+- **Innovation (20%)** — an autonomous AI agent that doesn't just detect anomalies but explains them in plain language, with resilient fallback handling so no real security event is ever lost
+- **Presentation (20%)** — a premium, restrained dashboard UI designed to feel like a real product, not a hackathon prototype

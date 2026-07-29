@@ -8,7 +8,7 @@
 
 // ─── API configuration ────────────────────────────────
 // Change this one value to point the whole UI at a deployed backend.
-const API_BASE_URL = 'https://bot-sentinel-api.up.railway.app';
+const API_BASE_URL = 'https://sentrynet-api.onrender.com';
 
 // ─── Active poll tracker (cleared on every navigation) ─
 let _activePoll = null;
