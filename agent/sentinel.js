@@ -62,7 +62,7 @@ function explorerTxUrl(txHash) {
 }
 
 async function generateReportOnce(anomalyType, details) {
-  const prompt = `You are BOT Sentinel, an autonomous AI security agent monitoring a DePIN compute-node registry on BOT Chain. You just detected the following anomaly:
+  const prompt = `You are SentryNet, an autonomous AI security agent monitoring a DePIN compute-node registry on BOT Chain. You just detected the following anomaly:
 
 Anomaly type: ${anomalyType}
 Details: ${JSON.stringify(details, null, 2)}
@@ -217,7 +217,7 @@ function startApiServer() {
       if (req.url === "/api/identity") {
         const totalAlertsRaised = await getAlertCount();
         const body = {
-          agentName: "BOT Sentinel",
+          agentName: "SentryNet",
           agentAddress: AGENT_ADDRESS,
           contractAddress: CONTRACT_ADDRESS,
           network: "BOT Chain Testnet",
@@ -250,7 +250,7 @@ function startApiServer() {
   });
 
   server.listen(API_PORT, () => {
-    console.log(`Sentinel API listening on http://localhost:${API_PORT}`);
+    console.log(`SentryNet API listening on http://localhost:${API_PORT}`);
   });
 }
 
@@ -259,7 +259,7 @@ async function main() {
   const nodeCount = await registry.getNodeCount();
   nodesRegistered = Number(nodeCount);
 
-  console.log("BOT Sentinel agent started.");
+  console.log("SentryNet agent started.");
   console.log("Watching NodeRegistry at:", CONTRACT_ADDRESS);
   console.log("Nodes currently registered:", nodeCount.toString());
   console.log(`Polling for new events every ${POLL_INTERVAL_MS / 1000}s... (leave this running)`);

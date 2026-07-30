@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   BOT SENTINEL — APP SHELL JAVASCRIPT
+   SentryNet — APP SHELL JAVASCRIPT
    Navigation, identity fetch, Overview, Agent Identity,
    Live Monitoring, Verification page renderers.
    ═══════════════════════════════════════════════════════ */
@@ -157,7 +157,7 @@ function renderOverview() {
         AI SECURITY AGENT FOR BOT CHAIN
       </div>
       <h1 class="ov-title">Autonomous Security<br>for the DePIN Layer</h1>
-      <p class="ov-subtitle">BOT Sentinel continuously watches compute nodes, detects anomalous behaviour, generates AI security reports and records verifiable evidence on BOT Chain.</p>
+      <p class="ov-subtitle">SentryNet continuously watches compute nodes, detects anomalous behaviour, generates AI security reports and records verifiable evidence on BOT Chain.</p>
       <div class="ov-cta-row">
         <button class="ov-btn-primary" id="ov-btn-dashboard">
           Launch Dashboard
@@ -193,7 +193,7 @@ function renderOverview() {
             <rect x="1" y="3.5" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.1"/>
             <path d="M3.5 3.5V2.5C3.5 1.67 4.17 1 5 1H6C6.83 1 7.5 1.67 7.5 2.5V3.5" stroke="currentColor" stroke-width="1.1"/>
           </svg>
-          app.botsentinel.io
+          app.sentrynet.io
         </div>
         <div class="ov-browser-actions">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5L8.24 5.62L11.5 5.88L9.09 8L9.85 11.18L7 9.5L4.15 11.18L4.91 8L2.5 5.88L5.76 5.62L7 2.5Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
@@ -350,7 +350,7 @@ function updateOverviewEvents(alerts) {
           <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.4"/>
           <path d="M16 10v7M16 20v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
-        <span>No anomalies detected yet — BOT Sentinel is watching.</span>
+        <span>No anomalies detected yet — SentryNet is watching.</span>
       </div>`;
     return;
   }
@@ -477,7 +477,7 @@ function renderAgentIdentity() {
               </svg>
             </div>
           </div>
-          <div class="ai-agent-name">BOT Sentinel</div>
+          <div class="ai-agent-name">SentryNet</div>
           <div class="ai-agent-role">AI Security Agent</div>
         </div>
         <div class="ai-divider-top"></div>
@@ -504,7 +504,7 @@ function renderAgentIdentity() {
             <span class="ai-explain-title">On-Chain Identity Verification</span>
           </div>
           <div class="ai-explain-body">
-            <p>BOT Sentinel's identity is anchored on BOT Chain. All actions performed by this agent are cryptographically signed and recorded on-chain for transparency and auditability.</p>
+            <p>SentryNet's identity is anchored on BOT Chain. All actions performed by this agent are cryptographically signed and recorded on-chain for transparency and auditability.</p>
             <p>This ensures that every detection, report, and verification is fully verifiable, immutable, and tamper-proof — providing operators with a trustless audit trail.</p>
           </div>
         </div>
@@ -615,7 +615,7 @@ function humanizeVerbose(type) {
 }
 
 function sevToLabel(sev) {
-  return sev === 'high' ? 'Critical' : sev === 'medium' ? 'Medium' : 'Info';
+  return sev === 'high' ? 'High' : sev === 'medium' ? 'Medium' : 'Info';
 }
 
 function relativeTime(iso) {
@@ -803,7 +803,7 @@ function updateLmFeed(alerts) {
           <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.4"/>
           <path d="M16 10v7M16 20v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
-        <span>No anomalies detected yet — BOT Sentinel is watching.</span>
+        <span>No anomalies detected yet — SentryNet is watching.</span>
       </div>`;
     return;
   }
@@ -1181,7 +1181,7 @@ async function fetchIdentity() {
     if (shortEl) shortEl.textContent = short;
     if (addrEl) addrEl.title = `Operator: ${full}`;
   } catch (err) {
-    console.warn('[BOT Sentinel] Could not fetch identity:', err.message);
+    console.warn('[SentryNet] Could not fetch identity:', err.message);
     if (shortEl) shortEl.textContent = '——';
   }
 }

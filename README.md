@@ -1,105 +1,165 @@
-# BOT Sentinel
+# SentryNet
 
-**Autonomous AI security agent for the DePIN layer of BOT Chain.**
+SentryNet continuously watches a compute-node registry deployed on BOT Chain, catches nodes that claim impossible output or that submit proofs after being turned off, and turns every detection into a clear, AI-generated security report. Every alert is backed by a real transaction on-chain, so you can verify exactly what happened without trusting anyone.
 
-BOT Sentinel continuously monitors a DePIN compute-node registry deployed on BOT Chain testnet, detects anomalous node behavior in real time, generates human-readable security reports using Google Gemini, and publishes verifiable evidence — every alert links directly back to the exact on-chain transaction that triggered it.
+## System Architecture
 
-🔗 **Live App:** https://bot-sentinel.up.railway.app
-🔗 **Live API:** https://bot-sentinel-api.up.railway.app/api/identity
-🔗 **GitHub:** https://github.com/jamzy-codes/bot-sentinel
-🔗 **Contract on Explorer:** https://scan.bohr.life/address/0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
+```mermaid
+flowchart LR
+    UI["Dashboard"]
+    Agent["SentryNet Agent"]
+    Contract["NodeRegistry Contract"]
+    DB[("Alert Database")]
 
----
+    UI --> Agent
+    Agent --> Contract
+    Agent --> DB
 
-## Why this, why BOT Chain
-
-BOT Chain's core identity is **DePIN + PoS dual mining** — a network of physical/compute infrastructure nodes contributing real work, secured by proof-of-stake. That combination introduces a real, non-trivial security problem: **how do you know a node is telling the truth about the work it claims to have done?**
-
-BOT Sentinel answers that directly. Instead of building a generic EVM tool that happens to run on BOT Chain, it's purpose-built around BOT Chain's actual DePIN thesis — watching a node registry, catching nodes that claim implausible output or that submit proofs after being deactivated, and turning every detection into a transparent, AI-explained, on-chain-verifiable event.
-
----
-
-## What it does
-
-1. **Watches** a `NodeRegistry` smart contract on BOT Chain testnet for two categories of suspicious activity:
-   - **Implausible Output Claims** — a node reports compute output that vastly exceeds a sane threshold
-   - **Proofs From Inactive Nodes** — a node that has been deactivated still submits a proof, which should be impossible for a legitimate node
-2. **Detects** these events live by polling the chain every 6 seconds (not relying on WebSocket filters, which are unreliable on public RPC endpoints)
-3. **Explains** each detection using Google Gemini, generating a clear, professional security report describing what happened and what an operator should check next — with automatic retries and a safe fallback if the AI provider is temporarily unavailable, so no real on-chain anomaly is ever silently dropped
-4. **Publishes** everything through a public HTTP API and a live dashboard, where every alert links directly to its transaction on the BOT Chain explorer
-
----
-
-## Architecture
-
-```
-┌─────────────────────┐      ┌──────────────────────┐      ┌────────────────────┐
-│   NodeRegistry.sol   │ ───► │   Sentinel Agent      │ ───► │   Sentinel API      │
-│  (BOT Chain Testnet) │      │  (Node.js, polling)   │      │  (Express-style,     │
-│                      │      │  + Gemini AI reports  │      │   deployed Railway)  │
-└─────────────────────┘      └──────────────────────┘      └─────────┬──────────┘
-                                                                        │
-                                                                        ▼
-                                                              ┌────────────────────┐
-                                                              │   BOT Sentinel UI   │
-                                                              │  (4-page dashboard,  │
-                                                              │   deployed Railway)  │
-                                                              └────────────────────┘
+    style UI fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#fff
+    style Agent fill:#2e1065,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    style Contract fill:#0f172a,stroke:#c084fc,stroke-width:2px,color:#fff
+    style DB fill:#022c22,stroke:#10b981,stroke-width:2px,color:#fff
 ```
 
-- **Smart contract** (`contracts/NodeRegistry.sol`) — registers nodes, accepts proof submissions, tracks active/inactive state, emits `ImplausibleOutputFlag` and `ProofFromInactiveNode` events on-chain
-- **Agent** (`agent/sentinel.js`) — a standalone Node.js process that polls the contract's event logs, calls Gemini to generate a report on each anomaly, and serves the results via a small built-in HTTP API
-- **Frontend** (`ui/`) — a 4-page dashboard (Overview, Agent Identity, Live Monitoring, Verification & Proof) that polls the agent's API and renders everything live, with every piece of evidence linking back to the real transaction on-chain
+The agent polls the smart contract on BOT Chain testnet every 6 seconds, keeps an alert history in a persistent database, and serves a live API that the dashboard uses.
 
-Both the agent and the frontend are deployed as independent services on Railway, each with their own public URL.
+## Features
 
----
+### Always-on monitoring
 
-## Live demo walkthrough
+The agent listens for two kinds of suspicious events emitted by the on-chain registry:
 
-- **Overview** — high-level dashboard: nodes monitored, threats detected, network uptime, and a live feed of the most recent security events
-- **Agent Identity** — the agent's own on-chain identity: its address, the contract it watches, the network it's on, all independently verifiable on the explorer
-- **Live Monitoring** — a real-time, filterable feed of every detected anomaly, polling every 6 seconds
-- **Verification & Proof** — click into any alert to see the full on-chain evidence (transaction hash, node ID, raw details) side-by-side with the AI-generated security report explaining it
+- **Implausible output claims** – a node reports computing an amount that far exceeds a sane threshold
+- **Proofs from inactive nodes** – a node that was deactivated still somehow submits a proof
 
----
+Whenever either event fires, the agent captures the transaction hash, node ID, and all relevant on-chain data.
 
-## Tech stack
+```mermaid
+sequenceDiagram
+    actor Node
+    participant Contract
+    participant Agent
+    participant Gemini
+
+    Node->>Contract: Submit proof (high output / after deactivation)
+    Contract->>Contract: Emit ImplausibleOutputFlag or ProofFromInactiveNode
+    Agent->>Contract: Poll event logs
+    Contract->>Agent: Return event data
+    Agent->>Gemini: Send anomaly details
+    Gemini->>Agent: Return human-readable report
+    Agent->>Agent: Store alert + report in database
+```
+
+### AI-generated security analysis
+
+Every detection is passed to Google Gemini, which writes a short, operator-friendly report explaining what happened and what to check next. If Gemini is temporarily unavailable, the agent falls back to a safe placeholder so no real event is ever lost.
+
+### Verifiable on-chain evidence
+
+Each alert includes the exact transaction hash and a direct link to the BOT Chain block explorer. The dashboard lets you click through to see the proof yourself, directly on the chain.
+
+### Live dashboard
+
+A four-page web dashboard (Overview, Agent Identity, Live Monitoring, Verification & Proof) pulls data from the agent's API and updates in real time, showing every anomaly and its corresponding report.
+
+## Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/jamzy-codes/sentrynet.git
+   cd sentrynet
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+
+   Create a `.env` file in the root with these values:
+
+   ```env
+   PRIVATE_KEY=your_bot_chain_testnet_wallet_private_key
+   CONTRACT_ADDRESS=0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
+   GEMINI_API_KEY=your_google_gemini_api_key
+   TURSO_DATABASE_URL=libsql://your-turso-db.turso.io
+   TURSO_AUTH_TOKEN=your_turso_auth_token
+   ALLOWED_ORIGINS=http://localhost:3000
+   ```
+
+   - `PRIVATE_KEY` is used to derive the agent's own address. You need a wallet with a small amount of BOT testnet tokens for gas if you want to trigger transactions.
+   - `GEMINI_API_KEY` can be obtained from [aistudio.google.com](https://aistudio.google.com).
+   - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` come from [Turso](https://turso.tech). The database stores alerts so they survive restarts.
+   - `ALLOWED_ORIGINS` is a comma-separated list of allowed CORS origins for the API (defaults to `http://localhost:3000`).
+
+4. **Run the agent**
+
+   ```bash
+   node agent/sentinel.js
+   ```
+
+   The agent starts polling the contract and serves its HTTP API on the port specified by the `PORT` environment variable (or 4000 by default).
+
+5. **Run the frontend (optional)**
+
+   In a separate terminal:
+
+   ```bash
+   cd ui
+   npm install
+   npm start
+   ```
+
+   The dashboard will be available at `http://localhost:3000` and will connect to the agent's API.
+
+## Usage
+
+Once the agent is running, it watches for anomalies automatically. To see it in action, you can trigger an anomaly by submitting a proof with an implausible output or from a deactivated node. The live monitoring page of the dashboard will show the new alert within seconds.
+
+If you deployed the `NodeRegistry` contract on your own, you can register a node and then submit a proof with a very high output to trigger an `ImplausibleOutputFlag` event.
+
+The agent's API provides two public endpoints:
+
+```bash
+# Agent identity and status
+curl https://localhost:4000/api/identity
+
+# All recorded alerts (newest first)
+curl https://localhost:4000/api/alerts
+```
+
+The dashboard (`http://localhost:3000`) pulls from these endpoints and renders every detection in real time.
+
+## Technologies Used
 
 | Layer | Technology |
-|---|---|
-| Smart contract | Solidity 0.8.24, Hardhat 3.9.1 |
-| Chain | BOT Chain Testnet (chain ID `968`) |
-| Agent | Node.js (ESM), ethers.js v6 |
-| AI reporting | Google Gemini (`gemini-2.5-flash`) |
-| Frontend | HTML / CSS / vanilla JS, hover-responsive shell UI |
+| --- | --- |
+| Smart contract | Solidity 0.8.24, Hardhat 3 |
+| Blockchain network | BOT Chain testnet (chain ID 968) |
+| Agent runtime | Node.js (ESM), ethers.js v6 |
+| AI reporting | Google Gemini (gemini-2.5-flash) |
+| Persistent storage | Turso (libSQL / SQLite) |
+| Frontend | HTML, CSS (Vanilla), JavaScript |
 | Deployment | Railway (agent + frontend as separate services) |
 
----
+## API Documentation
 
-## Smart contract
+The agent exposes a small HTTP API for the dashboard. All responses are JSON.
 
-**Address:** `0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3`
-**Network:** BOT Chain Testnet (chain ID `968`)
-**Explorer:** https://scan.bohr.life/address/0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
+Base URL when running locally: `http://localhost:4000`
 
-Key functions:
-- `registerNode(nodeId)` — registers a new compute node
-- `submitProof(nodeId, outputClaimed)` — submits a proof of work; triggers `ImplausibleOutputFlag` if `outputClaimed >= 100000`, or `ProofFromInactiveNode` if the node is currently deactivated
-- `deactivateNode(nodeId)` / `reactivateNode(nodeId)` — toggles a node's active status
-- `getNode(nodeId)` / `getNodeCount()` — read node state
+### GET /api/identity
 
----
+**Description**: Returns the agent's on-chain identity and current monitoring status.
 
-## API reference
+**Response**:
 
-**Base URL:** `https://bot-sentinel-api.up.railway.app`
-
-### `GET /api/identity`
-Returns the agent's own on-chain identity and current status.
 ```json
 {
-  "agentName": "BOT Sentinel",
+  "agentName": "SentryNet",
   "agentAddress": "0x51f04E04C46d0aDBB67c3f55dc43f92c73FFF53A",
   "contractAddress": "0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3",
   "network": "BOT Chain Testnet",
@@ -107,79 +167,62 @@ Returns the agent's own on-chain identity and current status.
   "startedAt": "2026-07-08T...",
   "nodesMonitored": 1,
   "totalAlertsRaised": 2,
-  "explorerAgentUrl": "...",
-  "explorerContractUrl": "..."
+  "explorerAgentUrl": "https://scan.bohr.life/address/0x51f04E04C46d0aDBB67c3f55dc43f92c73FFF53A",
+  "explorerContractUrl": "https://scan.bohr.life/address/0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3"
 }
 ```
 
-### `GET /api/alerts`
-Returns every detected anomaly, newest-first, each backed by a real transaction.
+### GET /api/alerts
+
+**Description**: Returns a list of all detected anomalies, ordered newest first.
+
+**Response**:
+
 ```json
 [
   {
-    "id": "0x...",
+    "id": "0x...-15",
     "type": "ImplausibleOutputClaim",
     "severity": "high",
     "nodeId": "node-1",
     "detectedAt": "2026-07-08T...",
     "txHash": "0x...",
     "explorerTxUrl": "https://scan.bohr.life/tx/0x...",
-    "details": { "nodeId": "node-1", "outputClaimed": "999999", "threshold": "100000" },
+    "details": {
+      "nodeId": "node-1",
+      "outputClaimed": "999999",
+      "threshold": "100000",
+      "timestamp": "2026-07-08T..."
+    },
     "report": "SECURITY ALERT: Implausible Output Claim Detected..."
   }
 ]
 ```
 
----
+**Environment variables required** (for the agent itself, not the API caller):
 
-## Running locally
+- `CONTRACT_ADDRESS` – address of the `NodeRegistry` contract to watch
+- `GEMINI_API_KEY` – Google Gemini API key for generating reports
+- `TURSO_DATABASE_URL` – connection string for Turso database
+- `TURSO_AUTH_TOKEN` – authentication token for Turso
+- `PRIVATE_KEY` – optional; used to derive the agent's on-chain address for display
+- `ALLOWED_ORIGINS` – CORS origins (defaults to `http://localhost:3000`)
+- `PORT` – port for the HTTP API (defaults to 4000)
 
-**Prerequisites:** Node.js ≥18, a BOT Chain testnet wallet with a small amount of BOT (for gas), a Gemini API key (free tier from [aistudio.google.com](https://aistudio.google.com)).
+## Author
 
-```bash
-git clone https://github.com/jamzy-codes/bot-sentinel.git
-cd bot-sentinel
-npm install
-```
+- X (Twitter): [https://x.com/Only_1_Jamzy](https://x.com/Only_1_Jamzy)
 
-Create a `.env` file:
-```
-PRIVATE_KEY=your_wallet_private_key
-CONTRACT_ADDRESS=0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
-GEMINI_API_KEY=your_gemini_api_key
-```
+## Badges
 
-Run the agent:
-```bash
-node agent/sentinel.js
-```
-
-Run the frontend (in a separate terminal):
-```bash
-cd ui
-npm install
-npm start
-```
-
-Trigger an anomaly to see it live:
-```bash
-$env:CONTRACT_ADDRESS="0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3"; $env:NODE_ID="node-1"; $env:OUTPUT_CLAIMED="999999"; npx hardhat run scripts/submitProof.ts --network botTestnet
-```
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Solidity](https://img.shields.io/badge/Solidity-363636?style=for-the-badge&logo=solidity&logoColor=white)](https://soliditylang.org/)
+[![Hardhat](https://img.shields.io/badge/Hardhat-F7DF1E?style=for-the-badge&logo=hardhat&logoColor=black)](https://hardhat.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Ethers.js](https://img.shields.io/badge/ethers.js-2535A0?style=for-the-badge&logo=ethers&logoColor=white)](https://docs.ethers.org/)
+[![Google Gemini](https://img.shields.io/badge/Google%20Gemini-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com/)
+[![Turso](https://img.shields.io/badge/Turso-00B388?style=for-the-badge&logo=turso&logoColor=white)](https://turso.tech/)
 
 ---
 
-## What's next (stretch goals not built for this submission)
-
-- Real validator staking integration once feasible with sufficient BOT balance
-- A bond/slash mechanism referencing BOT Chain's live `StakeHubContract`
-- Gasless agent transactions via a paymaster sponsor
-- Multi-node, multi-registry monitoring at scale
-
----
-
-## Judging criteria alignment
-
-- **BOT Chain Integration (35%)** — built directly around BOT Chain's DePIN + PoS identity; every alert is a real on-chain event with a real transaction hash, not simulated data
-- **Product Completeness (25%)** — full pipeline is live and deployed end-to-end: contract → agent → API → dashboard, all publicly accessible right now
-- **Innovation (20%)** — an autonomous AI agent that doesn't just detect anomalies but explains them in plain language, with resilient fallback handling so no real security event is ever lost
-- **Presentation (20%)** — a premium, restrained dashboard UI designed to feel like a real product, not a hackathon prototype
+[![Readme was generated by Dokugen](https://img.shields.io/badge/Readme%20was%20generated%20by-Dokugen-brightgreen)](https://dokugen.samueltuoyo.com)
