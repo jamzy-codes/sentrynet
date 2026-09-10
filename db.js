@@ -28,6 +28,21 @@ export async function initDb() {
     )
   `);
   console.log("[db] Turso alerts table ready");
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS pending_slashes (
+      operation_id TEXT PRIMARY KEY,
+      node_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      related_alert_id TEXT,
+      scheduled_at TEXT NOT NULL,
+      execute_after TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      resolved_at TEXT
+    )
+  `);
+  console.log("[db] Turso pending_slashes table ready");
 }
 
 // Insert a new alert. Call this everywhere the old code did
@@ -88,5 +103,69 @@ function rowToAlert(row) {
     explorerTxUrl: row.explorer_tx_url,
     details: row.details ? JSON.parse(row.details) : {},
     report: row.report,
+  };
+}
+
+export async function insertPendingSlash(entry) {
+  await client.execute({
+    sql: `
+      INSERT INTO pending_slashes (
+        operation_id,
+        node_id,
+        reason,
+        salt,
+        related_alert_id,
+        scheduled_at,
+        execute_after,
+        status
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    `,
+    args: [
+      entry.operationId,
+      entry.nodeId,
+      entry.reason,
+      entry.salt,
+      entry.relatedAlertId ?? null,
+      entry.scheduledAt,
+      entry.executeAfter,
+    ],
+  });
+}
+
+export async function updatePendingSlashStatus(operationId, status) {
+  await client.execute({
+    sql: `
+      UPDATE pending_slashes
+      SET status = ?, resolved_at = ?
+      WHERE operation_id = ?
+    `,
+    args: [status, new Date().toISOString(), operationId],
+  });
+}
+
+export async function getPendingSlashes(status = null) {
+  const sql = status
+    ? `SELECT * FROM pending_slashes WHERE status = ? ORDER BY scheduled_at DESC`
+    : `SELECT * FROM pending_slashes ORDER BY scheduled_at DESC`;
+
+  const args = status ? [status] : [];
+
+  const result = await client.execute({ sql, args });
+
+  return result.rows.map(rowToPendingSlash);
+}
+
+function rowToPendingSlash(row) {
+  return {
+    operationId: row.operation_id,
+    nodeId: row.node_id,
+    reason: row.reason,
+    salt: row.salt,
+    relatedAlertId: row.related_alert_id,
+    scheduledAt: row.scheduled_at,
+    executeAfter: row.execute_after,
+    status: row.status,
+    resolvedAt: row.resolved_at,
   };
 }

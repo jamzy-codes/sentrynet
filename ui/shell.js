@@ -4,31 +4,32 @@
    Live Monitoring, Verification page renderers.
    ═══════════════════════════════════════════════════════ */
 
-'use strict';
+"use strict";
 
 // ─── API configuration ────────────────────────────────
 // Change this one value to point the whole UI at a deployed backend.
-const API_BASE_URL = 'https://sentrynet-api.onrender.com';
+const API_BASE_URL = "https://sentrynet-api.onrender.com";
 
 // ─── Active poll tracker (cleared on every navigation) ─
 let _activePoll = null;
-let _relativeTimer = null;   // LM page: updates relative timestamps
+let _relativeTimer = null; // LM page: updates relative timestamps
 let _lmRenderedIds = new Set(); // LM page: tracks which alert IDs are in the DOM
-let _lmFilter = 'all';  // LM page: current severity filter
-let _pageParams = {};      // params passed to the current page (e.g. alertId)
+let _lmFilter = "all"; // LM page: current severity filter
+let _pageParams = {}; // params passed to the current page (e.g. alertId)
 
 // ─── Page Registry ────────────────────────────────────
 const PAGES = {
-  'overview': { label: 'Overview', render: renderOverview },
-  'agent-identity': { label: 'Agent Identity', render: renderAgentIdentity },
-  'live-monitoring': { label: 'Live Monitoring', render: renderLiveMonitoring },
-  'verification': { label: 'Verification', render: renderVerification },
+  overview: { label: "Overview", render: renderOverview },
+  "agent-identity": { label: "Agent Identity", render: renderAgentIdentity },
+  "live-monitoring": { label: "Live Monitoring", render: renderLiveMonitoring },
+  "pending-slashes": { label: "Pending Slashes", render: renderPendingSlashes },
+  verification: { label: "Verification", render: renderVerification },
 };
 
 // ─── DOM References ───────────────────────────────────
-const breadcrumbCurrent = document.getElementById('breadcrumb-current');
-const pageContainer = document.getElementById('page-container');
-const navItems = document.querySelectorAll('.nav-item');
+const breadcrumbCurrent = document.getElementById("breadcrumb-current");
+const pageContainer = document.getElementById("page-container");
+const navItems = document.querySelectorAll(".nav-item");
 
 // ─── Navigation ───────────────────────────────────────
 function navigateTo(pageId, params = {}) {
@@ -36,40 +37,51 @@ function navigateTo(pageId, params = {}) {
   _pageParams = params;
 
   // Stop any page-level timers from the previous page
-  if (_activePoll) { clearInterval(_activePoll); _activePoll = null; }
-  if (_relativeTimer) { clearInterval(_relativeTimer); _relativeTimer = null; }
+  if (_activePoll) {
+    clearInterval(_activePoll);
+    _activePoll = null;
+  }
+  if (_relativeTimer) {
+    clearInterval(_relativeTimer);
+    _relativeTimer = null;
+  }
   _lmRenderedIds = new Set();
-  _lmFilter = 'all';
+  _lmFilter = "all";
 
-  navItems.forEach(btn => btn.classList.toggle('active', btn.dataset.page === pageId));
+  navItems.forEach((btn) =>
+    btn.classList.toggle("active", btn.dataset.page === pageId),
+  );
   breadcrumbCurrent.textContent = PAGES[pageId].label;
 
-  pageContainer.style.opacity = '0';
-  pageContainer.style.transform = 'translateY(8px)';
+  pageContainer.style.opacity = "0";
+  pageContainer.style.transform = "translateY(8px)";
 
   requestAnimationFrame(() => {
-    pageContainer.innerHTML = '';
+    pageContainer.innerHTML = "";
     const content = PAGES[pageId].render();
     pageContainer.appendChild(content);
 
     requestAnimationFrame(() => {
-      pageContainer.style.transition = 'opacity 220ms ease, transform 220ms ease';
-      pageContainer.style.opacity = '1';
-      pageContainer.style.transform = 'translateY(0)';
+      pageContainer.style.transition =
+        "opacity 220ms ease, transform 220ms ease";
+      pageContainer.style.opacity = "1";
+      pageContainer.style.transform = "translateY(0)";
     });
   });
 
-  history.replaceState(null, '', `#${pageId}`);
+  history.replaceState(null, "", `#${pageId}`);
 }
 
-navItems.forEach(btn => btn.addEventListener('click', () => navigateTo(btn.dataset.page)));
+navItems.forEach((btn) =>
+  btn.addEventListener("click", () => navigateTo(btn.dataset.page)),
+);
 
 // ─── Shared SVG gradient def ─────────────────────────
 (function injectSvgDefs() {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.id = 'svg-defs';
-  svg.setAttribute('aria-hidden', 'true');
-  svg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.id = "svg-defs";
+  svg.setAttribute("aria-hidden", "true");
+  svg.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;";
   svg.innerHTML = `<defs>
     <linearGradient id="nav-grad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#7C6CF6"/>
@@ -83,40 +95,73 @@ navItems.forEach(btn => btn.addEventListener('click', () => navigateTo(btn.datas
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'className') e.className = v;
-    else if (k === 'innerHTML') e.innerHTML = v;
+    if (k === "className") e.className = v;
+    else if (k === "innerHTML") e.innerHTML = v;
     else e.setAttribute(k, v);
   }
   for (const child of children) {
-    if (typeof child === 'string') e.appendChild(document.createTextNode(child));
+    if (typeof child === "string")
+      e.appendChild(document.createTextNode(child));
     else if (child) e.appendChild(child);
   }
   return e;
 }
 
 // ─── String utilities ─────────────────────────────────
-function escHTML(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function escAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
-function shortAddr(full, f = 6, b = 5) { return (!full || full.length <= f + b + 1) ? (full || '—') : `${full.slice(0, f)}…${full.slice(-b)}`; }
-function shortHash(h, f = 6, b = 4) { return (!h || h.length <= f + b + 1) ? (h || '—') : `${h.slice(0, f)}…${h.slice(-b)}`; }
+function escHTML(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+function escAttr(s) {
+  return String(s ?? "")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function shortAddr(full, f = 6, b = 5) {
+  return !full || full.length <= f + b + 1
+    ? full || "—"
+    : `${full.slice(0, f)}…${full.slice(-b)}`;
+}
+function shortHash(h, f = 6, b = 4) {
+  return !h || h.length <= f + b + 1
+    ? h || "—"
+    : `${h.slice(0, f)}…${h.slice(-b)}`;
+}
 function formatUTC(iso) {
-  if (!iso) return '—';
-  try { return new Date(iso).toUTCString().replace(' GMT', ' UTC'); } catch { return iso; }
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toUTCString().replace(" GMT", " UTC");
+  } catch {
+    return iso;
+  }
 }
 function formatShortDate(iso) {
-  if (!iso) return '—';
+  if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleString('en-GB', {
-      year: 'numeric', month: 'short', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    return d.toLocaleString("en-GB", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
     });
-  } catch { return iso; }
+  } catch {
+    return iso;
+  }
 }
 function humanizeType(type) {
-  return String(type || '').replace(/([A-Z])/g, ' $1').trim();
+  return String(type || "")
+    .replace(/([A-Z])/g, " $1")
+    .trim();
 }
-function capitalise(s) { return s ? s[0].toUpperCase() + s.slice(1) : ''; }
+function capitalise(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : "";
+}
 
 // ─── Icon SVGs ────────────────────────────────────────
 function copySvg() {
@@ -136,9 +181,11 @@ function cardHTML(label, value, sub, trend, isWarning = false) {
   return `<div class="placeholder-card">
     <div class="accent-line"></div>
     <div class="card-label">${label}</div>
-    <div class="card-value" style="${isWarning ? 'color:var(--warn-amber)' : ''}">${value}</div>
-    ${sub ? `<div class="card-mono">${sub}</div>` : ''}
-    ${trend ? `<div class="card-trend">${trend}</div>` : ''}
+    <div class="card-value" style="${
+      isWarning ? "color:var(--warn-amber)" : ""
+    }">${value}</div>
+    ${sub ? `<div class="card-mono">${sub}</div>` : ""}
+    ${trend ? `<div class="card-trend">${trend}</div>` : ""}
   </div>`;
 }
 
@@ -147,7 +194,7 @@ function cardHTML(label, value, sub, trend, isWarning = false) {
 // ═══════════════════════════════════════════════════════
 
 function renderOverview() {
-  const page = el('div', { className: 'ov-page' });
+  const page = el("div", { className: "ov-page" });
 
   page.innerHTML = `
     <!-- ── Hero ── -->
@@ -273,7 +320,9 @@ function renderOverview() {
           </div>
           <div class="ov-events-list" id="ov-events-list">
             <!-- skeleton rows -->
-            ${[1, 2, 3].map(() => `
+            ${[1, 2, 3]
+              .map(
+                () => `
               <div class="ov-event-row ov-event-skeleton">
                 <div class="ov-skeleton" style="width:28px;height:28px;border-radius:50%"></div>
                 <div style="display:flex;flex-direction:column;gap:6px">
@@ -285,7 +334,9 @@ function renderOverview() {
                 <div class="ov-skeleton" style="width:100px;height:13px"></div>
                 <div class="ov-skeleton" style="width:76px;height:30px;border-radius:8px"></div>
               </div>
-            `).join('')}
+            `,
+              )
+              .join("")}
           </div>
         </div>
 
@@ -294,9 +345,15 @@ function renderOverview() {
   `;
 
   // Wire hero buttons
-  page.querySelector('#ov-btn-dashboard').addEventListener('click', () => navigateTo('agent-identity'));
-  page.querySelector('#ov-btn-monitoring').addEventListener('click', () => navigateTo('live-monitoring'));
-  page.querySelector('#ov-view-all').addEventListener('click', () => navigateTo('live-monitoring'));
+  page
+    .querySelector("#ov-btn-dashboard")
+    .addEventListener("click", () => navigateTo("agent-identity"));
+  page
+    .querySelector("#ov-btn-monitoring")
+    .addEventListener("click", () => navigateTo("live-monitoring"));
+  page
+    .querySelector("#ov-view-all")
+    .addEventListener("click", () => navigateTo("live-monitoring"));
 
   // Initial load + 6s poll
   loadOverviewData();
@@ -317,28 +374,34 @@ async function loadOverviewData() {
     updateOverviewStats(identity, alerts);
     updateOverviewEvents(alerts);
   } catch (err) {
-    console.warn('[Overview] fetch failed:', err.message);
+    console.warn("[Overview] fetch failed:", err.message);
     showOverviewOffline();
   }
 }
 
 function updateOverviewStats(identity, alerts) {
   // Nodes
-  const nodesVal = document.getElementById('ov-nodes-val');
-  const nodesSub = document.getElementById('ov-nodes-sub-txt');
-  if (nodesVal) nodesVal.textContent = identity?.nodesMonitored ?? '—';
-  if (nodesSub) nodesSub.textContent = `${identity?.nodesMonitored ?? 0} active`;
+  const nodesVal = document.getElementById("ov-nodes-val");
+  const nodesSub = document.getElementById("ov-nodes-sub-txt");
+  if (nodesVal) nodesVal.textContent = identity?.nodesMonitored ?? "—";
+  if (nodesSub)
+    nodesSub.textContent = `${identity?.nodesMonitored ?? 0} active`;
 
   // Threats
-  const threatsVal = document.getElementById('ov-threats-val');
-  const threatsSub = document.getElementById('ov-threats-sub-txt');
-  const highCount = Array.isArray(alerts) ? alerts.filter(a => a.severity === 'high').length : 0;
-  if (threatsVal) threatsVal.textContent = Array.isArray(alerts) ? String(alerts.length) : '—';
+  const threatsVal = document.getElementById("ov-threats-val");
+  const threatsSub = document.getElementById("ov-threats-sub-txt");
+  const highCount = Array.isArray(alerts)
+    ? alerts.filter((a) => a.severity === "high").length
+    : 0;
+  if (threatsVal)
+    threatsVal.textContent = Array.isArray(alerts)
+      ? String(alerts.length)
+      : "—";
   if (threatsSub) threatsSub.textContent = `${highCount} high severity`;
 }
 
 function updateOverviewEvents(alerts) {
-  const list = document.getElementById('ov-events-list');
+  const list = document.getElementById("ov-events-list");
   if (!list) return;
 
   const recent = Array.isArray(alerts) ? alerts.slice(0, 4) : [];
@@ -356,44 +419,51 @@ function updateOverviewEvents(alerts) {
   }
 
   // Compare with existing rendered rows to avoid unnecessary DOM churn
-  const existing = list.getAttribute('data-rendered');
-  const key = recent.map(a => a.id).join(',');
+  const existing = list.getAttribute("data-rendered");
+  const key = recent.map((a) => a.id).join(",");
   if (existing === key) return; // Nothing changed
-  list.setAttribute('data-rendered', key);
+  list.setAttribute("data-rendered", key);
 
-  list.innerHTML = recent.map(alert => buildEventRow(alert)).join('');
+  list.innerHTML = recent.map((alert) => buildEventRow(alert)).join("");
 
   // Wire copy buttons
-  list.querySelectorAll('[data-copy]').forEach(btn => {
-    btn.addEventListener('click', () => {
+  list.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
       const text = btn.dataset.copy;
       if (!text) return;
       navigator.clipboard.writeText(text).then(() => {
-        btn.classList.add('copied');
+        btn.classList.add("copied");
         btn.innerHTML = checkSvg();
-        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = copySvg(); }, 1800);
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.innerHTML = copySvg();
+        }, 1800);
       });
     });
   });
 
   // Wire View Proof buttons → Verification page
-  list.querySelectorAll('.ov-view-proof-btn').forEach(btn => {
-    btn.addEventListener('click', () => navigateTo('verification', { alertId: btn.dataset.id }));
+  list.querySelectorAll(".ov-view-proof-btn").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      navigateTo("verification", { alertId: btn.dataset.id }),
+    );
   });
 }
 
 function buildEventRow(alert) {
-  const sev = (alert.severity || 'info').toLowerCase();
-  const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
+  const sev = (alert.severity || "info").toLowerCase();
+  const sevClass =
+    sev === "high" ? "sev-high" : sev === "medium" ? "sev-medium" : "sev-info";
   const sevLabel = capitalise(sev);
   const humanType = humanizeType(alert.type);
-  const hash = alert.txHash || '';
+  const hash = alert.txHash || "";
   const shortH = shortHash(hash);
 
   // Icon per severity
-  const icon = sev === 'high'
-    ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
-    : sev === 'medium'
+  const icon =
+    sev === "high"
+      ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
+      : sev === "medium"
       ? `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2L12.5 12H1.5L7 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 6.5V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.5" r=".6" fill="currentColor"/></svg>`
       : `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 5.5V7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="9.2" r=".6" fill="currentColor"/></svg>`;
 
@@ -402,7 +472,7 @@ function buildEventRow(alert) {
       <div class="ov-event-icon-wrap ${sevClass}">${icon}</div>
       <div class="ov-event-main">
         <div class="ov-event-type">${escHTML(humanType)}</div>
-        <div class="ov-event-node">Node: ${escHTML(alert.nodeId || '—')}</div>
+        <div class="ov-event-node">Node: ${escHTML(alert.nodeId || "—")}</div>
       </div>
       <div class="ov-event-col">
         <div class="ov-col-label">Severity</div>
@@ -412,30 +482,40 @@ function buildEventRow(alert) {
       </div>
       <div class="ov-event-col">
         <div class="ov-col-label">Detected At</div>
-        <span class="mono ov-event-ts">${escHTML(formatShortDate(alert.detectedAt))}</span>
+        <span class="mono ov-event-ts">${escHTML(
+          formatShortDate(alert.detectedAt),
+        )}</span>
       </div>
       <div class="ov-event-col">
         <div class="ov-col-label">Tx Hash</div>
         <span class="ov-hash-row">
           <span class="mono ov-event-hash-val">${escHTML(shortH)}</span>
-          ${hash ? `<button class="ov-icon-copy-btn" data-copy="${escAttr(hash)}" aria-label="Copy tx hash">${copySvg()}</button>` : ''}
+          ${
+            hash
+              ? `<button class="ov-icon-copy-btn" data-copy="${escAttr(
+                  hash,
+                )}" aria-label="Copy tx hash">${copySvg()}</button>`
+              : ""
+          }
         </span>
       </div>
-      <button class="ov-view-proof-btn" data-id="${escAttr(alert.id || '')}">View Proof</button>
+      <button class="ov-view-proof-btn" data-id="${escAttr(
+        alert.id || "",
+      )}">View Proof</button>
     </div>`;
 }
 
 function showOverviewOffline() {
-  const nodesVal = document.getElementById('ov-nodes-val');
-  const nodesSub = document.getElementById('ov-nodes-sub-txt');
-  const threatsVal = document.getElementById('ov-threats-val');
-  const threatsSub = document.getElementById('ov-threats-sub-txt');
-  if (nodesVal) nodesVal.textContent = '—';
-  if (nodesSub) nodesSub.textContent = 'agent offline';
-  if (threatsVal) threatsVal.textContent = '—';
-  if (threatsSub) threatsSub.textContent = '—';
-  const list = document.getElementById('ov-events-list');
-  if (list && !list.getAttribute('data-rendered')) {
+  const nodesVal = document.getElementById("ov-nodes-val");
+  const nodesSub = document.getElementById("ov-nodes-sub-txt");
+  const threatsVal = document.getElementById("ov-threats-val");
+  const threatsSub = document.getElementById("ov-threats-sub-txt");
+  if (nodesVal) nodesVal.textContent = "—";
+  if (nodesSub) nodesSub.textContent = "agent offline";
+  if (threatsVal) threatsVal.textContent = "—";
+  if (threatsSub) threatsSub.textContent = "—";
+  const list = document.getElementById("ov-events-list");
+  if (list && !list.getAttribute("data-rendered")) {
     list.innerHTML = `<div class="ov-empty-state">
       <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style="opacity:.3">
         <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.4"/>
@@ -450,7 +530,7 @@ function showOverviewOffline() {
 // AGENT IDENTITY PAGE
 // ═══════════════════════════════════════════════════════
 function renderAgentIdentity() {
-  const page = el('div', { className: 'ai-page' });
+  const page = el("div", { className: "ai-page" });
 
   page.innerHTML = `
     <div class="ai-header">
@@ -482,12 +562,24 @@ function renderAgentIdentity() {
         </div>
         <div class="ai-divider-top"></div>
         <div class="ai-rows" id="ai-rows">
-          ${['Agent Address', 'Contract Address', 'Network', 'Chain ID', 'Started At'].map(l => `
+          ${[
+            "Agent Address",
+            "Contract Address",
+            "Network",
+            "Chain ID",
+            "Started At",
+          ]
+            .map(
+              (l) => `
             <div class="ai-row">
               <span class="ai-row-label">${l}</span>
-              <span class="ai-skeleton" style="width:${l === 'Network' ? 100 : 160}px"></span>
+              <span class="ai-skeleton" style="width:${
+                l === "Network" ? 100 : 160
+              }px"></span>
               <span style="width:120px"></span>
-            </div>`).join('')}
+            </div>`,
+            )
+            .join("")}
         </div>
       </div>
       <!-- RIGHT -->
@@ -540,59 +632,123 @@ function renderAgentIdentity() {
     </div>`;
 
   fetch(`${API_BASE_URL}/api/identity`)
-    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-    .then(d => populateIdentityPage(d))
-    .catch(err => { console.warn('[Identity] fetch failed:', err.message); showIdentityError(err.message); });
+    .then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then((d) => populateIdentityPage(d))
+    .catch((err) => {
+      console.warn("[Identity] fetch failed:", err.message);
+      showIdentityError(err.message);
+    });
 
   return page;
 }
 
 function populateIdentityPage(d) {
   const rows = [
-    { label: 'Agent Address', value: shortAddr(d.agentAddress), full: d.agentAddress, mono: true, url: d.explorerAgentUrl },
-    { label: 'Contract Address', value: shortAddr(d.contractAddress), full: d.contractAddress, mono: true, url: d.explorerContractUrl },
-    { label: 'Network', value: d.network || '—', full: d.network, mono: false, url: null },
-    { label: 'Chain ID', value: d.chainId != null ? String(d.chainId) : '—', full: d.chainId != null ? String(d.chainId) : null, mono: true, url: null },
-    { label: 'Started At', value: formatUTC(d.startedAt), full: d.startedAt, mono: true, url: null },
+    {
+      label: "Agent Address",
+      value: shortAddr(d.agentAddress),
+      full: d.agentAddress,
+      mono: true,
+      url: d.explorerAgentUrl,
+    },
+    {
+      label: "Contract Address",
+      value: shortAddr(d.contractAddress),
+      full: d.contractAddress,
+      mono: true,
+      url: d.explorerContractUrl,
+    },
+    {
+      label: "Network",
+      value: d.network || "—",
+      full: d.network,
+      mono: false,
+      url: null,
+    },
+    {
+      label: "Chain ID",
+      value: d.chainId != null ? String(d.chainId) : "—",
+      full: d.chainId != null ? String(d.chainId) : null,
+      mono: true,
+      url: null,
+    },
+    {
+      label: "Started At",
+      value: formatUTC(d.startedAt),
+      full: d.startedAt,
+      mono: true,
+      url: null,
+    },
   ];
 
-  const rowsEl = document.getElementById('ai-rows');
+  const rowsEl = document.getElementById("ai-rows");
   if (!rowsEl) return;
-  rowsEl.innerHTML = rows.map(r => `
+  rowsEl.innerHTML = rows
+    .map(
+      (r) => `
     <div class="ai-row">
       <span class="ai-row-label">${r.label}</span>
-      <span class="${r.mono ? 'ai-row-value' : 'ai-row-value plain'}" title="${escAttr(r.full || '')}">${escHTML(r.value)}</span>
+      <span class="${
+        r.mono ? "ai-row-value" : "ai-row-value plain"
+      }" title="${escAttr(r.full || "")}">${escHTML(r.value)}</span>
       <span class="ai-row-actions">
-        ${r.full ? `<button class="ai-copy-btn" data-copy="${escAttr(r.full)}" aria-label="Copy ${r.label}">${copySvg()}</button>` : ''}
-        ${r.url ? `<a class="ai-explorer-link" href="${escAttr(r.url)}" target="_blank" rel="noopener">View on Explorer <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M5 2H8V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
+        ${
+          r.full
+            ? `<button class="ai-copy-btn" data-copy="${escAttr(
+                r.full,
+              )}" aria-label="Copy ${r.label}">${copySvg()}</button>`
+            : ""
+        }
+        ${
+          r.url
+            ? `<a class="ai-explorer-link" href="${escAttr(
+                r.url,
+              )}" target="_blank" rel="noopener">View on Explorer <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M5 2H8V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`
+            : ""
+        }
       </span>
-    </div>`).join('');
+    </div>`,
+    )
+    .join("");
 
-  rowsEl.querySelectorAll('.ai-copy-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+  rowsEl.querySelectorAll(".ai-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
       navigator.clipboard.writeText(btn.dataset.copy).then(() => {
-        btn.classList.add('copied'); btn.innerHTML = checkSvg();
-        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = copySvg(); }, 1800);
+        btn.classList.add("copied");
+        btn.innerHTML = checkSvg();
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.innerHTML = copySvg();
+        }, 1800);
       });
     });
   });
 
-  const netEl = document.getElementById('stat-network');
-  const nodesEl = document.getElementById('stat-nodes');
-  if (netEl) netEl.textContent = d.network || '—';
-  if (nodesEl) nodesEl.textContent = d.nodesMonitored != null ? String(d.nodesMonitored) : '—';
+  const netEl = document.getElementById("stat-network");
+  const nodesEl = document.getElementById("stat-nodes");
+  if (netEl) netEl.textContent = d.network || "—";
+  if (nodesEl)
+    nodesEl.textContent =
+      d.nodesMonitored != null ? String(d.nodesMonitored) : "—";
 }
 
 function showIdentityError(msg) {
-  const card = document.getElementById('ai-identity-card');
+  const card = document.getElementById("ai-identity-card");
   if (!card) return;
-  const banner = document.createElement('div');
-  banner.className = 'ai-error-banner';
+  const banner = document.createElement("div");
+  banner.className = "ai-error-banner";
   banner.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M7 4v3.5M7 9.5v.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
     Agent unavailable — start <code>node agent/sentinel.js</code> and refresh.`;
   card.prepend(banner);
-  const rows = document.getElementById('ai-rows');
-  if (rows) rows.querySelectorAll('.ai-skeleton').forEach(s => { s.textContent = '—'; s.className = 'ai-row-value'; });
+  const rows = document.getElementById("ai-rows");
+  if (rows)
+    rows.querySelectorAll(".ai-skeleton").forEach((s) => {
+      s.textContent = "—";
+      s.className = "ai-row-value";
+    });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -601,39 +757,54 @@ function showIdentityError(msg) {
 
 // Verbose type labels matching the reference image
 const LM_TYPE_MAP = {
-  'ProofFromInactiveNode': 'Proof Submitted From Inactive Node',
-  'ImplausibleOutputClaim': 'Implausible Output Claim Detected',
-  'ImplausibleOutputFlag': 'Implausible Output Claim Detected',
-  'NodeRegistered': 'Node Registered On-Chain',
-  'NodeDeactivated': 'Node Deactivated',
-  'NodeReactivated': 'Node Reactivated',
-  'ProofSubmitted': 'Proof Submitted On-Chain',
-  'NodeHeartbeat': 'Node Heartbeat Verified',
+  ProofFromInactiveNode: "Proof Submitted From Inactive Node",
+  ImplausibleOutputClaim: "Implausible Output Claim Detected",
+  ImplausibleOutputFlag: "Implausible Output Claim Detected",
+  NodeRegistered: "Node Registered On-Chain",
+  NodeDeactivated: "Node Deactivated",
+  NodeReactivated: "Node Reactivated",
+  ProofSubmitted: "Proof Submitted On-Chain",
+  NodeHeartbeat: "Node Heartbeat Verified",
 };
 function humanizeVerbose(type) {
   return LM_TYPE_MAP[type] || humanizeType(type);
 }
 
 function sevToLabel(sev) {
-  return sev === 'high' ? 'High' : sev === 'medium' ? 'Medium' : 'Info';
+  return sev === "high" ? "High" : sev === "medium" ? "Medium" : "Info";
 }
 
 function relativeTime(iso) {
-  if (!iso) return '';
+  if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 0) return 'just now';
+  if (diff < 0) return "just now";
   const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s} second${s !== 1 ? 's' : ''} ago`;
+  if (s < 60) return `${s} second${s !== 1 ? "s" : ""} ago`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} minute${m !== 1 ? 's' : ''} ago`;
+  if (m < 60) return `${m} minute${m !== 1 ? "s" : ""} ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hour${h !== 1 ? 's' : ''} ago`;
+  if (h < 24) return `${h} hour${h !== 1 ? "s" : ""} ago`;
   const d = Math.floor(h / 24);
-  return `${d} day${d !== 1 ? 's' : ''} ago`;
+  return `${d} day${d !== 1 ? "s" : ""} ago`;
+}
+
+function countdownTo(iso) {
+  if (!iso) return "—";
+  const diff = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(diff)) return "—";
+  if (diff <= 0) return "now";
+  const totalMinutes = Math.floor(diff / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${Math.max(1, Math.floor(diff / 1000))}s`;
 }
 
 function renderLiveMonitoring() {
-  const page = el('div', { className: 'lm-page' });
+  const page = el("div", { className: "lm-page" });
 
   page.innerHTML = `
     <!-- ── Header ── -->
@@ -735,7 +906,9 @@ function renderLiveMonitoring() {
       </div>
       <div class="lm-feed-list" id="lm-feed-list">
         <!-- skeleton placeholder -->
-        ${[1, 2, 3].map(() => `
+        ${[1, 2, 3]
+          .map(
+            () => `
           <div class="lm-alert-card lm-skel-row">
             <div class="lm-skel" style="width:36px;height:36px;border-radius:50%;flex-shrink:0"></div>
             <div style="display:flex;flex-direction:column;gap:7px;flex:1">
@@ -745,13 +918,15 @@ function renderLiveMonitoring() {
             <div class="lm-skel" style="width:130px;height:12px"></div>
             <div class="lm-skel" style="width:72px;height:24px;border-radius:100px"></div>
             <div class="lm-skel" style="width:90px;height:32px;border-radius:8px"></div>
-          </div>`).join('')}
+          </div>`,
+          )
+          .join("")}
       </div>
     </div>
   `;
 
   // Wire severity filter
-  page.querySelector('#lm-filter').addEventListener('change', e => {
+  page.querySelector("#lm-filter").addEventListener("change", (e) => {
     _lmFilter = e.target.value;
     applyLmFilter();
   });
@@ -776,23 +951,26 @@ async function loadLmData() {
     updateLmStats(identity, alerts);
     updateLmFeed(alerts);
   } catch (err) {
-    console.warn('[LM] fetch error:', err.message);
+    console.warn("[LM] fetch error:", err.message);
     updateLmStats(null, []);
   }
 }
 
 function updateLmStats(identity, alerts) {
-  const nodesEl = document.getElementById('lm-nodes-val');
-  const alertsEl = document.getElementById('lm-alerts-val');
-  const criticalEl = document.getElementById('lm-critical-val');
-  const high = Array.isArray(alerts) ? alerts.filter(a => a.severity === 'high').length : 0;
-  if (nodesEl) nodesEl.textContent = identity?.nodesMonitored ?? '—';
-  if (alertsEl) alertsEl.textContent = Array.isArray(alerts) ? String(alerts.length) : '—';
+  const nodesEl = document.getElementById("lm-nodes-val");
+  const alertsEl = document.getElementById("lm-alerts-val");
+  const criticalEl = document.getElementById("lm-critical-val");
+  const high = Array.isArray(alerts)
+    ? alerts.filter((a) => a.severity === "high").length
+    : 0;
+  if (nodesEl) nodesEl.textContent = identity?.nodesMonitored ?? "—";
+  if (alertsEl)
+    alertsEl.textContent = Array.isArray(alerts) ? String(alerts.length) : "—";
   if (criticalEl) criticalEl.textContent = String(high);
 }
 
 function updateLmFeed(alerts) {
-  const list = document.getElementById('lm-feed-list');
+  const list = document.getElementById("lm-feed-list");
   if (!list) return;
 
   if (!Array.isArray(alerts) || alerts.length === 0) {
@@ -809,12 +987,12 @@ function updateLmFeed(alerts) {
   }
 
   // Find IDs not yet in the DOM (new alerts since last poll)
-  const newAlerts = alerts.filter(a => !_lmRenderedIds.has(a.id));
+  const newAlerts = alerts.filter((a) => !_lmRenderedIds.has(a.id));
 
   // First render: replace skeletons wholesale
   if (_lmRenderedIds.size === 0) {
-    list.innerHTML = '';
-    alerts.forEach(a => {
+    list.innerHTML = "";
+    alerts.forEach((a) => {
       const card = buildLmCard(a, false);
       list.appendChild(card);
       _lmRenderedIds.add(a.id);
@@ -824,7 +1002,7 @@ function updateLmFeed(alerts) {
   }
 
   // Incremental: prepend only genuinely new rows with slide-in animation
-  newAlerts.forEach(a => {
+  newAlerts.forEach((a) => {
     const card = buildLmCard(a, true);
     list.prepend(card);
     _lmRenderedIds.add(a.id);
@@ -833,62 +1011,258 @@ function updateLmFeed(alerts) {
 }
 
 function buildLmCard(alert, animate) {
-  const sev = (alert.severity || 'info').toLowerCase();
-  const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
+  const sev = (alert.severity || "info").toLowerCase();
+  const sevClass =
+    sev === "high" ? "sev-high" : sev === "medium" ? "sev-medium" : "sev-info";
   const label = sevToLabel(sev);
   const title = humanizeVerbose(alert.type);
   const ts = formatShortDate(alert.detectedAt);
   const rel = relativeTime(alert.detectedAt);
 
   // Severity icon
-  const iconInner = sev === 'high'
-    ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
-    : sev === 'medium'
+  const iconInner =
+    sev === "high"
+      ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
+      : sev === "medium"
       ? `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L14.5 14H1.5L8 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 7V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="12" r=".7" fill="currentColor"/></svg>`
       : `<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 6V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="11" r=".7" fill="currentColor"/></svg>`;
 
-  const div = document.createElement('div');
-  div.className = `lm-alert-card ${sevClass}${animate ? ' lm-card-new' : ''}`;
+  const div = document.createElement("div");
+  div.className = `lm-alert-card ${sevClass}${animate ? " lm-card-new" : ""}`;
   div.dataset.sev = sev;
-  div.dataset.id = alert.id || '';
+  div.dataset.id = alert.id || "";
 
   div.innerHTML = `
     <div class="lm-alert-icon ${sevClass}">${iconInner}</div>
     <div class="lm-alert-main">
       <div class="lm-alert-title">${escHTML(title)}</div>
-      <div class="lm-alert-node">Node ID: ${escHTML(alert.nodeId || '—')}</div>
+      <div class="lm-alert-node">Node ID: ${escHTML(alert.nodeId || "—")}</div>
     </div>
     <div class="lm-alert-time">
       <span class="mono lm-alert-ts">${escHTML(ts)}</span>
-      <span class="lm-alert-rel" data-detected="${escAttr(alert.detectedAt || '')}">${escHTML(rel)}</span>
+      <span class="lm-alert-rel" data-detected="${escAttr(
+        alert.detectedAt || "",
+      )}">${escHTML(rel)}</span>
     </div>
     <span class="lm-sev-pill ${sevClass}">
       <span class="lm-pill-dot ${sevClass}"></span>${escHTML(label)}
     </span>
-    <button class="lm-proof-btn" data-id="${escAttr(alert.id || '')}">
+    <button class="lm-proof-btn" data-id="${escAttr(alert.id || "")}">
       View Proof
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
         <path d="M2 9L9 2M6 2H9V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>`;
 
-  div.querySelector('.lm-proof-btn').addEventListener('click', () => navigateTo('verification', { alertId: alert.id }));
+  div
+    .querySelector(".lm-proof-btn")
+    .addEventListener("click", () =>
+      navigateTo("verification", { alertId: alert.id }),
+    );
   return div;
 }
 
 function applyLmFilter() {
-  const list = document.getElementById('lm-feed-list');
+  const list = document.getElementById("lm-feed-list");
   if (!list) return;
-  list.querySelectorAll('.lm-alert-card').forEach(card => {
-    const match = _lmFilter === 'all' || card.dataset.sev === _lmFilter;
-    card.classList.toggle('lm-hidden', !match);
+  list.querySelectorAll(".lm-alert-card").forEach((card) => {
+    const match = _lmFilter === "all" || card.dataset.sev === _lmFilter;
+    card.classList.toggle("lm-hidden", !match);
   });
 }
 
 function updateLmRelTimes() {
-  document.querySelectorAll('.lm-alert-rel').forEach(span => {
+  document.querySelectorAll(".lm-alert-rel").forEach((span) => {
     const iso = span.dataset.detected;
     if (iso) span.textContent = relativeTime(iso);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// PENDING SLASHES PAGE
+// ═══════════════════════════════════════════════════════
+
+function slashStatusClass(status) {
+  return status === "pending"
+    ? "sev-medium"
+    : status === "executed"
+    ? "sev-high"
+    : "sev-info";
+}
+
+function slashStatusLabel(status) {
+  return status === "pending"
+    ? "Pending"
+    : status === "executed"
+    ? "Executed"
+    : "Cancelled";
+}
+
+function renderPendingSlashes() {
+  const page = el("div", { className: "lm-page" });
+
+  page.innerHTML = `
+    <div class="lm-header">
+      <div class="lm-title-area">
+        <h1 class="lm-title">Pending Slashes</h1>
+        <p class="lm-subtitle">Slashes flagged for review before they take effect on-chain.</p>
+      </div>
+      <div class="lm-live-badge">
+        <span class="lm-live-dot"></span>
+        <span class="lm-live-label">LIVE</span>
+        <span class="lm-polling-text">Polling every 6 seconds</span>
+      </div>
+    </div>
+
+    <div class="lm-feed-section">
+      <div class="lm-feed-header">
+        <div class="lm-feed-header-left">
+          <div class="lm-feed-title-row">
+            <span class="lm-feed-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1.5L2 3.5V6.5C2 9.25 4.1 11.75 7 12.5C9.9 11.75 12 9.25 12 6.5V3.5L7 1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                <path d="M4.5 9.5L9.5 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="lm-feed-name">Slash Queue</span>
+          </div>
+          <div class="lm-feed-subtitle">Review scheduled penalties and their execution status.</div>
+        </div>
+      </div>
+      <div class="lm-feed-list" id="ps-slashes-list">
+        ${[1, 2, 3]
+          .map(
+            () => `
+          <div class="lm-alert-card lm-skel-row">
+            <div class="lm-skel" style="width:36px;height:36px;border-radius:50%;flex-shrink:0"></div>
+            <div style="display:flex;flex-direction:column;gap:7px;flex:1">
+              <div class="lm-skel" style="width:260px;height:14px"></div>
+              <div class="lm-skel" style="width:110px;height:11px"></div>
+            </div>
+            <div class="lm-skel" style="width:130px;height:12px"></div>
+            <div class="lm-skel" style="width:72px;height:24px;border-radius:100px"></div>
+            <div class="lm-skel" style="width:90px;height:32px;border-radius:8px"></div>
+          </div>`,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+
+  loadPendingSlashes();
+  _activePoll = setInterval(loadPendingSlashes, 6000);
+  _relativeTimer = setInterval(updatePendingSlashTimes, 15000);
+
+  return page;
+}
+
+async function loadPendingSlashes() {
+  const list = document.getElementById("ps-slashes-list");
+  if (!list) return;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/pending-slashes`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const slashes = await response.json();
+    updatePendingSlashes(Array.isArray(slashes) ? slashes : []);
+  } catch (err) {
+    console.warn("[Pending Slashes] fetch error:", err.message);
+    list.innerHTML = `<div class="lm-empty-state"><span>Agent unavailable — start <code>node agent/sentinel.js</code> and refresh.</span></div>`;
+  }
+}
+
+function updatePendingSlashes(slashes) {
+  const list = document.getElementById("ps-slashes-list");
+  if (!list) return;
+
+  if (slashes.length === 0) {
+    list.innerHTML = `
+      <div class="lm-empty-state">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style="opacity:.3">
+          <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M10 16h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <span>No pending slashes — SentryNet has no penalties awaiting review.</span>
+      </div>`;
+    return;
+  }
+
+  const sorted = [...slashes].sort((a, b) => {
+    const aPending = a.status === "pending";
+    const bPending = b.status === "pending";
+    if (aPending !== bPending) return aPending ? -1 : 1;
+    const aDate = new Date(aPending ? a.executeAfter : a.resolvedAt).getTime();
+    const bDate = new Date(bPending ? b.executeAfter : b.resolvedAt).getTime();
+    if (Number.isNaN(aDate)) return 1;
+    if (Number.isNaN(bDate)) return -1;
+    return aPending ? aDate - bDate : bDate - aDate;
+  });
+
+  list.innerHTML = "";
+  sorted.forEach((slash) => list.appendChild(buildPendingSlashCard(slash)));
+}
+
+function buildPendingSlashCard(slash) {
+  const status = String(slash.status || "cancelled").toLowerCase();
+  const statusClass = slashStatusClass(status);
+  const statusLabel = slashStatusLabel(status);
+  const reason = humanizeVerbose(slash.reason);
+  const time =
+    status === "pending"
+      ? `executes in ${countdownTo(slash.executeAfter)}`
+      : `${status} ${relativeTime(slash.resolvedAt) || "—"}`;
+  const timeAttr = status === "pending" ? slash.executeAfter : slash.resolvedAt;
+
+  const card = document.createElement("div");
+  card.className = `lm-alert-card ${statusClass}`;
+  card.innerHTML = `
+    <div class="lm-alert-icon ${statusClass}">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1.75L2.25 4V7.25C2.25 10.25 4.7 13.1 8 14.25C11.3 13.1 13.75 10.25 13.75 7.25V4L8 1.75Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+        <path d="M5 8L7 10L11 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="lm-alert-main">
+      <div class="lm-alert-title">${escHTML(reason)}</div>
+      <div class="lm-alert-node">Node ID: ${escHTML(slash.nodeId || "—")}</div>
+    </div>
+    <div class="lm-alert-time">
+      <span class="mono lm-alert-ts">${escHTML(
+        formatShortDate(
+          status === "pending" ? slash.executeAfter : slash.resolvedAt,
+        ),
+      )}</span>
+      <span class="lm-alert-rel ps-slash-time" data-status="${escAttr(
+        status,
+      )}" data-time="${escAttr(timeAttr || "")}">${escHTML(time)}</span>
+    </div>
+    <span class="lm-sev-pill ${statusClass}">
+      <span class="lm-pill-dot ${statusClass}"></span>${escHTML(statusLabel)}
+    </span>
+    <button class="lm-proof-btn ps-alert-btn" data-id="${escAttr(
+      slash.relatedAlertId || "",
+    )}">
+      View Alert
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+        <path d="M2 9L9 2M6 2H9V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>`;
+
+  card.querySelector(".ps-alert-btn").addEventListener("click", () => {
+    navigateTo("verification", { alertId: slash.relatedAlertId });
+  });
+  return card;
+}
+
+function updatePendingSlashTimes() {
+  document.querySelectorAll(".ps-slash-time").forEach((span) => {
+    const status = span.dataset.status;
+    const iso = span.dataset.time;
+    if (!iso) return;
+    span.textContent =
+      status === "pending"
+        ? `executes in ${countdownTo(iso)}`
+        : `${status} ${relativeTime(iso) || "—"}`;
   });
 }
 
@@ -898,19 +1272,23 @@ function updateLmRelTimes() {
 
 function humanizeKey(key) {
   return key
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, s => s.toUpperCase())
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (s) => s.toUpperCase())
     .trim();
 }
 
 function renderReport(text) {
-  if (!text) return '<p class="vp-no-report">No report generated for this alert.</p>';
-  return text.split(/\n+/).filter(p => p.trim())
-    .map(p => `<p>${escHTML(p.trim())}</p>`).join('');
+  if (!text)
+    return '<p class="vp-no-report">No report generated for this alert.</p>';
+  return text
+    .split(/\n+/)
+    .filter((p) => p.trim())
+    .map((p) => `<p>${escHTML(p.trim())}</p>`)
+    .join("");
 }
 
 function renderVerification() {
-  const page = el('div', { className: 'vp-page' });
+  const page = el("div", { className: "vp-page" });
   const alertId = _pageParams.alertId || null;
 
   // Loading scaffold — populated after fetch
@@ -956,9 +1334,12 @@ function renderVerification() {
               </div>
               <span class="vp-panel-title">On-Chain Verification</span>
             </div>
-            <div class="vp-rows">${[1, 2, 3, 4, 5].map(() =>
-    `<div class="vp-row"><span class="lm-skel" style="width:110px;height:12px"></span><span class="lm-skel" style="width:180px;height:12px"></span></div>`
-  ).join('')}</div>
+            <div class="vp-rows">${[1, 2, 3, 4, 5]
+              .map(
+                () =>
+                  `<div class="vp-row"><span class="lm-skel" style="width:110px;height:12px"></span><span class="lm-skel" style="width:180px;height:12px"></span></div>`,
+              )
+              .join("")}</div>
           </div>
           <div class="vp-right-panel">
             <div class="vp-panel-header">
@@ -970,9 +1351,12 @@ function renderVerification() {
               <span class="vp-panel-title">AI Security Analysis</span>
               <span class="vp-gemini-tag">&#10022; Generated by Gemini</span>
             </div>
-            <div class="vp-report-body">${[1, 2, 3].map(() =>
-    `<div class="lm-skel" style="width:100%;height:13px;margin-bottom:8px"></div>`
-  ).join('')}</div>
+            <div class="vp-report-body">${[1, 2, 3]
+              .map(
+                () =>
+                  `<div class="lm-skel" style="width:100%;height:13px;margin-bottom:8px"></div>`,
+              )
+              .join("")}</div>
           </div>
         </div>
       </div>
@@ -989,17 +1373,21 @@ function renderVerification() {
   `;
 
   // Wire static nav buttons immediately (they don't need data)
-  page.querySelector('#vp-back').addEventListener('click', () => navigateTo('live-monitoring'));
-  page.querySelector('#vp-lm-btn').addEventListener('click', () => navigateTo('live-monitoring'));
+  page
+    .querySelector("#vp-back")
+    .addEventListener("click", () => navigateTo("live-monitoring"));
+  page
+    .querySelector("#vp-lm-btn")
+    .addEventListener("click", () => navigateTo("live-monitoring"));
 
   // Fetch and render
   fetch(`${API_BASE_URL}/api/alerts`)
-    .then(r => r.ok ? r.json() : [])
-    .then(alerts => {
+    .then((r) => (r.ok ? r.json() : []))
+    .then((alerts) => {
       const found = alertId
-        ? alerts.find(a => String(a.id) === String(alertId))
+        ? alerts.find((a) => String(a.id) === String(alertId))
         : alerts[0];
-      const content = document.getElementById('vp-content');
+      const content = document.getElementById("vp-content");
       if (!content) return;
       if (!found) {
         content.innerHTML = `
@@ -1014,88 +1402,130 @@ function renderVerification() {
             </div>
             <button class="vp-lm-btn" id="vp-nf-lm">View Live Monitoring</button>
           </div>`;
-        document.getElementById('vp-nf-lm')?.addEventListener('click', () => navigateTo('live-monitoring'));
+        document
+          .getElementById("vp-nf-lm")
+          ?.addEventListener("click", () => navigateTo("live-monitoring"));
         return;
       }
       renderVpDetail(content, found);
     })
-    .catch(err => {
-      const content = document.getElementById('vp-content');
-      if (content) content.innerHTML = `<div class="vp-not-found"><div class="vp-nf-title">Agent unavailable</div><div class="vp-nf-sub">Start <code>node agent/sentinel.js</code> and refresh.</div></div>`;
+    .catch((err) => {
+      const content = document.getElementById("vp-content");
+      if (content)
+        content.innerHTML = `<div class="vp-not-found"><div class="vp-nf-title">Agent unavailable</div><div class="vp-nf-sub">Start <code>node agent/sentinel.js</code> and refresh.</div></div>`;
     });
 
   // Poll every 6s to refresh the detail if the alert updates
   _activePoll = setInterval(() => {
     fetch(`${API_BASE_URL}/api/alerts`)
-      .then(r => r.ok ? r.json() : [])
-      .then(alerts => {
+      .then((r) => (r.ok ? r.json() : []))
+      .then((alerts) => {
         const found = alertId
-          ? alerts.find(a => String(a.id) === String(alertId))
+          ? alerts.find((a) => String(a.id) === String(alertId))
           : alerts[0];
-        const content = document.getElementById('vp-content');
+        const content = document.getElementById("vp-content");
         if (content && found) renderVpDetail(content, found);
       })
-      .catch(() => { });
+      .catch(() => {});
   }, 6000);
 
   return page;
 }
 
 function renderVpDetail(container, alert) {
-  const sev = (alert.severity || 'info').toLowerCase();
-  const sevClass = sev === 'high' ? 'sev-high' : sev === 'medium' ? 'sev-medium' : 'sev-info';
+  const sev = (alert.severity || "info").toLowerCase();
+  const sevClass =
+    sev === "high" ? "sev-high" : sev === "medium" ? "sev-medium" : "sev-info";
   const sevLabel = sevToLabel(sev);
 
   // ── Fixed rows ───────────────────────────────────────
   const fixedRows = [
-    { label: 'Alert Type', value: alert.type || '—', mono: false, full: alert.type, tag: sevClass },
-    { label: 'Node ID', value: alert.nodeId || '—', mono: true, full: alert.nodeId },
-    { label: 'Transaction Hash', value: shortHash(alert.txHash, 10, 6), mono: true, full: alert.txHash },
-    { label: 'Detected At', value: formatUTC(alert.detectedAt), mono: true, full: alert.detectedAt },
-    { label: 'Severity', value: sevLabel, mono: false, full: null, sevClass },
+    {
+      label: "Alert Type",
+      value: alert.type || "—",
+      mono: false,
+      full: alert.type,
+      tag: sevClass,
+    },
+    {
+      label: "Node ID",
+      value: alert.nodeId || "—",
+      mono: true,
+      full: alert.nodeId,
+    },
+    {
+      label: "Transaction Hash",
+      value: shortHash(alert.txHash, 10, 6),
+      mono: true,
+      full: alert.txHash,
+    },
+    {
+      label: "Detected At",
+      value: formatUTC(alert.detectedAt),
+      mono: true,
+      full: alert.detectedAt,
+    },
+    { label: "Severity", value: sevLabel, mono: false, full: null, sevClass },
   ];
 
   // ── Dynamic detail rows from alert.details ───────────
   const detailRows = [];
-  if (alert.details && typeof alert.details === 'object') {
+  if (alert.details && typeof alert.details === "object") {
     for (const [k, v] of Object.entries(alert.details)) {
       if (v == null) continue;
-      detailRows.push({ label: humanizeKey(k), value: String(v), mono: true, full: String(v) });
+      detailRows.push({
+        label: humanizeKey(k),
+        value: String(v),
+        mono: true,
+        full: String(v),
+      });
     }
   }
 
   const allRows = [...fixedRows, ...detailRows];
 
-  const rowsHtml = allRows.map(r => {
-    let valueHtml;
-    if (r.tag) {
-      // Alert type — small colored tag
-      valueHtml = `<span class="vp-type-tag ${r.tag}">${escHTML(r.value)}</span>`;
-    } else if (r.sevClass) {
-      // Severity — pill badge
-      valueHtml = `<span class="vp-sev-pill ${sevClass}"><span class="lm-pill-dot ${sevClass}"></span>${escHTML(r.value)}</span>`;
-    } else {
-      valueHtml = `<span class="${r.mono ? 'mono vp-mono-val' : 'vp-plain-val'}" title="${escAttr(r.full || '')}">${escHTML(r.value)}</span>`;
-    }
-    const copyBtn = r.full
-      ? `<button class="vp-copy-btn" data-copy="${escAttr(r.full)}" aria-label="Copy ${r.label}">${copySvg()}</button>`
-      : '';
-    return `
+  const rowsHtml = allRows
+    .map((r) => {
+      let valueHtml;
+      if (r.tag) {
+        // Alert type — small colored tag
+        valueHtml = `<span class="vp-type-tag ${r.tag}">${escHTML(
+          r.value,
+        )}</span>`;
+      } else if (r.sevClass) {
+        // Severity — pill badge
+        valueHtml = `<span class="vp-sev-pill ${sevClass}"><span class="lm-pill-dot ${sevClass}"></span>${escHTML(
+          r.value,
+        )}</span>`;
+      } else {
+        valueHtml = `<span class="${
+          r.mono ? "mono vp-mono-val" : "vp-plain-val"
+        }" title="${escAttr(r.full || "")}">${escHTML(r.value)}</span>`;
+      }
+      const copyBtn = r.full
+        ? `<button class="vp-copy-btn" data-copy="${escAttr(
+            r.full,
+          )}" aria-label="Copy ${r.label}">${copySvg()}</button>`
+        : "";
+      return `
       <div class="vp-row">
         <span class="vp-row-label">${escHTML(r.label)}</span>
         ${valueHtml}
         <span class="vp-row-copy">${copyBtn}</span>
       </div>`;
-  }).join('');
+    })
+    .join("");
 
   const explorerBtn = alert.explorerTxUrl
-    ? `<a class="vp-explorer-btn" href="${escAttr(alert.explorerTxUrl)}" target="_blank" rel="noopener">
+    ? `<a class="vp-explorer-btn" href="${escAttr(
+        alert.explorerTxUrl,
+      )}" target="_blank" rel="noopener">
          View on Block Explorer
          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
            <path d="M3 10L10 3M7 3H10V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
          </svg>
        </a>`
-    : '';
+    : "";
 
   const reportHtml = renderReport(alert.report);
 
@@ -1147,49 +1577,54 @@ function renderVpDetail(container, alert) {
   `;
 
   // Wire copy buttons
-  container.querySelectorAll('.vp-copy-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+  container.querySelectorAll(".vp-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
       navigator.clipboard.writeText(btn.dataset.copy).then(() => {
-        btn.classList.add('copied'); btn.innerHTML = checkSvg();
-        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = copySvg(); }, 1800);
+        btn.classList.add("copied");
+        btn.innerHTML = checkSvg();
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          btn.innerHTML = copySvg();
+        }, 1800);
       });
     });
   });
 }
 
 // ─── Notification button ───────────────────────────────
-document.getElementById('notif-btn').addEventListener('click', function () {
-  const badge = document.getElementById('notif-badge');
+document.getElementById("notif-btn").addEventListener("click", function () {
+  const badge = document.getElementById("notif-badge");
   if (badge) {
-    badge.style.transform = 'scale(0)';
-    badge.style.transition = 'transform 180ms ease';
+    badge.style.transform = "scale(0)";
+    badge.style.transition = "transform 180ms ease";
     setTimeout(() => badge.remove(), 200);
   }
 });
 
 // ─── Sidebar footer: fetch real agent address ─────────
 async function fetchIdentity() {
-  const addrEl = document.getElementById('operator-address');
-  const shortEl = addrEl ? addrEl.querySelector('.footer-addr') : null;
+  const addrEl = document.getElementById("operator-address");
+  const shortEl = addrEl ? addrEl.querySelector(".footer-addr") : null;
   try {
     const res = await fetch(`${API_BASE_URL}/api/identity`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const full = data.agentAddress || '';
-    if (!full) throw new Error('agentAddress missing');
-    const short = full.length > 11 ? `${full.slice(0, 6)}…${full.slice(-5)}` : full;
+    const full = data.agentAddress || "";
+    if (!full) throw new Error("agentAddress missing");
+    const short =
+      full.length > 11 ? `${full.slice(0, 6)}…${full.slice(-5)}` : full;
     if (shortEl) shortEl.textContent = short;
     if (addrEl) addrEl.title = `Operator: ${full}`;
   } catch (err) {
-    console.warn('[SentryNet] Could not fetch identity:', err.message);
-    if (shortEl) shortEl.textContent = '——';
+    console.warn("[SentryNet] Could not fetch identity:", err.message);
+    if (shortEl) shortEl.textContent = "——";
   }
 }
 
 // ─── Boot ─────────────────────────────────────────────
 (function boot() {
-  const hash = location.hash.replace('#', '');
-  const initial = PAGES[hash] ? hash : 'overview';
+  const hash = location.hash.replace("#", "");
+  const initial = PAGES[hash] ? hash : "overview";
   navigateTo(initial);
   fetchIdentity();
 })();
