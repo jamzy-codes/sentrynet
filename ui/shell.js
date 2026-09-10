@@ -792,7 +792,7 @@ function countdownTo(iso) {
   if (!iso) return "—";
   const diff = new Date(iso).getTime() - Date.now();
   if (Number.isNaN(diff)) return "—";
-  if (diff <= 0) return "now";
+  if (diff <= 0) return "overdue";
   const totalMinutes = Math.floor(diff / 60000);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
@@ -801,6 +801,11 @@ function countdownTo(iso) {
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m`;
   return `${Math.max(1, Math.floor(diff / 1000))}s`;
+}
+
+function isPastTimestamp(iso) {
+  const timestamp = new Date(iso).getTime();
+  return !Number.isNaN(timestamp) && timestamp <= Date.now();
 }
 
 function renderLiveMonitoring() {
@@ -1205,6 +1210,8 @@ function updatePendingSlashes(slashes) {
 function buildPendingSlashCard(slash) {
   const status = String(slash.status || "cancelled").toLowerCase();
   const statusClass = slashStatusClass(status);
+  const overdue = status === "pending" && isPastTimestamp(slash.executeAfter);
+  const visualClass = overdue ? "sev-high" : statusClass;
   const statusLabel = slashStatusLabel(status);
   const reason = humanizeVerbose(slash.reason);
   const time =
@@ -1214,9 +1221,11 @@ function buildPendingSlashCard(slash) {
   const timeAttr = status === "pending" ? slash.executeAfter : slash.resolvedAt;
 
   const card = document.createElement("div");
-  card.className = `lm-alert-card ${statusClass}`;
+  card.className = `lm-alert-card ${visualClass}`;
+  card.dataset.status = status;
+  card.dataset.overdue = String(overdue);
   card.innerHTML = `
-    <div class="lm-alert-icon ${statusClass}">
+    <div class="lm-alert-icon ${visualClass}">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M8 1.75L2.25 4V7.25C2.25 10.25 4.7 13.1 8 14.25C11.3 13.1 13.75 10.25 13.75 7.25V4L8 1.75Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
         <path d="M5 8L7 10L11 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1236,8 +1245,8 @@ function buildPendingSlashCard(slash) {
         status,
       )}" data-time="${escAttr(timeAttr || "")}">${escHTML(time)}</span>
     </div>
-    <span class="lm-sev-pill ${statusClass}">
-      <span class="lm-pill-dot ${statusClass}"></span>${escHTML(statusLabel)}
+    <span class="lm-sev-pill ${visualClass}">
+      <span class="lm-pill-dot ${visualClass}"></span>${escHTML(statusLabel)}
     </span>
     <button class="lm-proof-btn ps-alert-btn" data-id="${escAttr(
       slash.relatedAlertId || "",
@@ -1259,6 +1268,19 @@ function updatePendingSlashTimes() {
     const status = span.dataset.status;
     const iso = span.dataset.time;
     if (!iso) return;
+    const card = span.closest(".lm-alert-card");
+    const overdue = status === "pending" && isPastTimestamp(iso);
+    if (card && card.dataset.overdue !== String(overdue)) {
+      const previousClass = overdue ? "sev-medium" : "sev-high";
+      const nextClass = overdue ? "sev-high" : "sev-medium";
+      card.classList.replace(previousClass, nextClass);
+      card
+        .querySelectorAll(".lm-alert-icon, .lm-sev-pill, .lm-pill-dot")
+        .forEach((element) =>
+          element.classList.replace(previousClass, nextClass),
+        );
+      card.dataset.overdue = String(overdue);
+    }
     span.textContent =
       status === "pending"
         ? `executes in ${countdownTo(iso)}`

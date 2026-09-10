@@ -8,16 +8,16 @@ SentryNet continuously watches a compute-node registry deployed on BOT Chain, ca
 flowchart LR
     UI["Dashboard"]
     Agent["SentryNet Agent"]
-    Contract["NodeRegistry Contract"]
+    Contracts["On-Chain Contracts"]
     DB[("Alert Database")]
 
     UI --> Agent
-    Agent --> Contract
+    Agent --> Contracts
     Agent --> DB
 
     style UI fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#fff
     style Agent fill:#2e1065,stroke:#8b5cf6,stroke-width:2px,color:#fff
-    style Contract fill:#0f172a,stroke:#c084fc,stroke-width:2px,color:#fff
+    style Contracts fill:#0f172a,stroke:#c084fc,stroke-width:2px,color:#fff
     style DB fill:#022c22,stroke:#10b981,stroke-width:2px,color:#fff
 ```
 
@@ -29,8 +29,8 @@ The agent polls the smart contract on BOT Chain testnet every 6 seconds, keeps a
 
 The agent listens for two kinds of suspicious events emitted by the on-chain registry:
 
-- **Implausible output claims** – a node reports computing an amount that far exceeds a sane threshold
-- **Proofs from inactive nodes** – a node that was deactivated still somehow submits a proof
+- **Implausible output claims** - a node reports computing an amount that far exceeds a sane threshold
+- **Proofs from inactive nodes** - a node that was deactivated still somehow submits a proof
 
 Whenever either event fires, the agent captures the transaction hash, node ID, and all relevant on-chain data.
 
@@ -50,6 +50,24 @@ sequenceDiagram
     Agent->>Agent: Store alert + report in database
 ```
 
+### Automated slashing and bond management
+
+When SentryNet detects a severe anomaly, it can autonomously penalize bad actors using an integrated bond manager. The agent flags the node's staked bond to prevent withdrawal, then schedules a slash transaction via a timelock. The slash executes after a delay, allowing for human review and cancellation if necessary.
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant BondManager as "Bond Manager"
+    participant Timelock
+    participant DB as "Database"
+
+    Agent->>BondManager: Flag pending slash (locks funds)
+    Agent->>Timelock: Schedule slash execution
+    Timelock->>Agent: Return operation ID
+    Agent->>DB: Store pending slash state
+    Timelock->>BondManager: Execute slash after delay
+```
+
 ### AI-generated security analysis
 
 Every detection is passed to Google Gemini, which writes a short, operator-friendly report explaining what happened and what to check next. If Gemini is temporarily unavailable, the agent falls back to a safe placeholder so no real event is ever lost.
@@ -60,75 +78,81 @@ Each alert includes the exact transaction hash and a direct link to the BOT Chai
 
 ### Live dashboard
 
-A four-page web dashboard (Overview, Agent Identity, Live Monitoring, Verification & Proof) pulls data from the agent's API and updates in real time, showing every anomaly and its corresponding report.
+A five-page web dashboard (Overview, Agent Identity, Live Monitoring, Pending Slashes, Verification & Proof) pulls data from the agent's API and updates in real time, showing every anomaly, its corresponding report, and any pending node slashes.
 
 ## Installation
 
 1. **Clone the repository**
 
-   ```bash
-   git clone https://github.com/jamzy-codes/sentrynet.git
-   cd sentrynet
-   ```
+```bash
+git clone https://github.com/jamzy-codes/sentrynet.git
+cd sentrynet
+```
 
 2. **Install dependencies**
 
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+```
 
 3. **Set up environment variables**
 
-   Create a `.env` file in the root with these values:
+Create a `.env` file in the root with these values:
 
-   ```env
-   PRIVATE_KEY=your_bot_chain_testnet_wallet_private_key
-   CONTRACT_ADDRESS=0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
-   GEMINI_API_KEY=your_google_gemini_api_key
-   TURSO_DATABASE_URL=libsql://your-turso-db.turso.io
-   TURSO_AUTH_TOKEN=your_turso_auth_token
-   ALLOWED_ORIGINS=http://localhost:3000
-   ```
+```env
+PRIVATE_KEY=your_bot_chain_testnet_wallet_private_key
+CONTRACT_ADDRESS=0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3
+BOND_MANAGER_ADDRESS=0x...
+TIMELOCK_ADDRESS=0x...
+GEMINI_API_KEY=your_google_gemini_api_key
+TURSO_DATABASE_URL=libsql://your-turso-db.turso.io
+TURSO_AUTH_TOKEN=your_turso_auth_token
+ALLOWED_ORIGINS=http://localhost:3000
+```
 
-   - `PRIVATE_KEY` is used to derive the agent's own address. You need a wallet with a small amount of BOT testnet tokens for gas if you want to trigger transactions.
-   - `GEMINI_API_KEY` can be obtained from [aistudio.google.com](https://aistudio.google.com).
-   - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` come from [Turso](https://turso.tech). The database stores alerts so they survive restarts.
-   - `ALLOWED_ORIGINS` is a comma-separated list of allowed CORS origins for the API (defaults to `http://localhost:3000`).
+- `PRIVATE_KEY` is used to derive the agent's own address. You need a wallet with a small amount of BOT testnet tokens for gas if you want to trigger transactions.
+- `BOND_MANAGER_ADDRESS` and `TIMELOCK_ADDRESS` point to the deployed on-chain staking and timelock contracts for automated slashing.
+- `GEMINI_API_KEY` can be obtained from [aistudio.google.com](https://aistudio.google.com).
+- `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` come from [Turso](https://turso.tech). The database stores alerts so they survive restarts.
+- `ALLOWED_ORIGINS` is a comma-separated list of allowed CORS origins for the API (defaults to `http://localhost:3000`).
 
 4. **Run the agent**
 
-   ```bash
-   node agent/sentinel.js
-   ```
+```bash
+node agent/sentinel.js
+```
 
-   The agent starts polling the contract and serves its HTTP API on the port specified by the `PORT` environment variable (or 4000 by default).
+The agent starts polling the contract and serves its HTTP API on the port specified by the `PORT` environment variable (or 4000 by default).
 
 5. **Run the frontend (optional)**
 
-   In a separate terminal:
+In a separate terminal:
 
-   ```bash
-   cd ui
-   npm install
-   npm start
-   ```
+```bash
+cd ui
+npm install
+npm run dev
+```
 
-   The dashboard will be available at `http://localhost:3000` and will connect to the agent's API.
+The dashboard will be available at `http://localhost:3000` and will connect to the agent's API.
 
 ## Usage
 
-Once the agent is running, it watches for anomalies automatically. To see it in action, you can trigger an anomaly by submitting a proof with an implausible output or from a deactivated node. The live monitoring page of the dashboard will show the new alert within seconds.
+Once the agent is running, it watches for anomalies automatically. To see it in action, you can trigger an anomaly by submitting a proof with an implausible output or from a deactivated node. The live monitoring page of the dashboard will show the new alert within seconds, and any configured bond slashing procedures will automatically initiate.
 
 If you deployed the `NodeRegistry` contract on your own, you can register a node and then submit a proof with a very high output to trigger an `ImplausibleOutputFlag` event.
 
-The agent's API provides two public endpoints:
+The agent's API provides several public endpoints:
 
 ```bash
 # Agent identity and status
-curl https://localhost:4000/api/identity
+curl http://localhost:4000/api/identity
 
 # All recorded alerts (newest first)
-curl https://localhost:4000/api/alerts
+curl http://localhost:4000/api/alerts
+
+# View all pending slash operations
+curl http://localhost:4000/api/pending-slashes
 ```
 
 The dashboard (`http://localhost:3000`) pulls from these endpoints and renders every detection in real time.
@@ -137,7 +161,7 @@ The dashboard (`http://localhost:3000`) pulls from these endpoints and renders e
 
 | Layer | Technology |
 | --- | --- |
-| Smart contract | Solidity 0.8.24, Hardhat 3 |
+| Smart contract | Solidity 0.8.19, Hardhat 3, OpenZeppelin |
 | Blockchain network | BOT Chain testnet (chain ID 968) |
 | Agent runtime | Node.js (ESM), ethers.js v6 |
 | AI reporting | Google Gemini (gemini-2.5-flash) |
@@ -164,7 +188,7 @@ Base URL when running locally: `http://localhost:4000`
   "contractAddress": "0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3",
   "network": "BOT Chain Testnet",
   "chainId": 968,
-  "startedAt": "2026-07-08T...",
+  "startedAt": "2026-07-08T12:00:00.000Z",
   "nodesMonitored": 1,
   "totalAlertsRaised": 2,
   "explorerAgentUrl": "https://scan.bohr.life/address/0x51f04E04C46d0aDBB67c3f55dc43f92c73FFF53A",
@@ -185,29 +209,67 @@ Base URL when running locally: `http://localhost:4000`
     "type": "ImplausibleOutputClaim",
     "severity": "high",
     "nodeId": "node-1",
-    "detectedAt": "2026-07-08T...",
+    "detectedAt": "2026-07-08T12:00:00.000Z",
     "txHash": "0x...",
     "explorerTxUrl": "https://scan.bohr.life/tx/0x...",
     "details": {
       "nodeId": "node-1",
       "outputClaimed": "999999",
       "threshold": "100000",
-      "timestamp": "2026-07-08T..."
+      "timestamp": "2026-07-08T12:00:00.000Z"
     },
     "report": "SECURITY ALERT: Implausible Output Claim Detected..."
   }
 ]
 ```
 
+### GET /api/pending-slashes
+
+**Description**: Returns a list of scheduled, executed, or cancelled slashes. Can be filtered by passing an optional `status` query parameter.
+
+**Response**:
+
+```json
+[
+  {
+    "operationId": "0x123abc...",
+    "nodeId": "node-1",
+    "reason": "Implausible output claim",
+    "salt": "0xdef456...",
+    "relatedAlertId": "0x...-15",
+    "scheduledAt": "2026-07-08T12:00:00.000Z",
+    "executeAfter": "2026-07-10T12:00:00.000Z",
+    "status": "pending",
+    "resolvedAt": null
+  }
+]
+```
+
+### GET /api/bond/:nodeId
+
+**Description**: Returns current bond information for a given node ID from the BondManager contract.
+
+**Response**:
+
+```json
+{
+  "operator": "0x51f04E04C46d0aDBB67c3f55dc43f92c73FFF53A",
+  "amount": "100.5",
+  "unbondingAt": "0"
+}
+```
+
 **Environment variables required** (for the agent itself, not the API caller):
 
-- `CONTRACT_ADDRESS` – address of the `NodeRegistry` contract to watch
-- `GEMINI_API_KEY` – Google Gemini API key for generating reports
-- `TURSO_DATABASE_URL` – connection string for Turso database
-- `TURSO_AUTH_TOKEN` – authentication token for Turso
-- `PRIVATE_KEY` – optional; used to derive the agent's on-chain address for display
-- `ALLOWED_ORIGINS` – CORS origins (defaults to `http://localhost:3000`)
-- `PORT` – port for the HTTP API (defaults to 4000)
+- `CONTRACT_ADDRESS` - address of the `NodeRegistry` contract to watch
+- `BOND_MANAGER_ADDRESS` - address of the `BondManager` contract
+- `TIMELOCK_ADDRESS` - address of the deployed `TimelockController` contract
+- `GEMINI_API_KEY` - Google Gemini API key for generating reports
+- `TURSO_DATABASE_URL` - connection string for Turso database
+- `TURSO_AUTH_TOKEN` - authentication token for Turso
+- `PRIVATE_KEY` - optional; used to derive the agent's on-chain address for display and signing slashing calls
+- `ALLOWED_ORIGINS` - CORS origins (defaults to `http://localhost:3000`)
+- `PORT` - port for the HTTP API (defaults to 4000)
 
 ## Author
 
