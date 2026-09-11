@@ -792,11 +792,17 @@ function countdownTo(iso) {
   if (!iso) return "—";
   const diff = new Date(iso).getTime() - Date.now();
   if (Number.isNaN(diff)) return "—";
-  if (diff <= 0) return "overdue";
-  const totalMinutes = Math.floor(diff / 60000);
+  const overdue = diff <= 0;
+  const totalMinutes = Math.floor(Math.abs(diff) / 60000);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
   const minutes = totalMinutes % 60;
+  if (overdue) {
+    if (days > 0) return `overdue by ${days}d ${hours}h`;
+    if (hours > 0) return `overdue by ${hours}h ${minutes}m`;
+    if (minutes > 0) return `overdue by ${minutes}m`;
+    return `overdue by ${Math.max(1, Math.floor(Math.abs(diff) / 1000))}s`;
+  }
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m`;
@@ -1091,7 +1097,7 @@ function slashStatusClass(status) {
   return status === "pending"
     ? "sev-medium"
     : status === "executed"
-    ? "sev-high"
+    ? "sev-success"
     : "sev-info";
 }
 
@@ -1216,7 +1222,9 @@ function buildPendingSlashCard(slash) {
   const reason = humanizeVerbose(slash.reason);
   const time =
     status === "pending"
-      ? `executes in ${countdownTo(slash.executeAfter)}`
+      ? isPastTimestamp(slash.executeAfter)
+        ? countdownTo(slash.executeAfter)
+        : `executes in ${countdownTo(slash.executeAfter)}`
       : `${status} ${relativeTime(slash.resolvedAt) || "—"}`;
   const timeAttr = status === "pending" ? slash.executeAfter : slash.resolvedAt;
 
@@ -1283,7 +1291,9 @@ function updatePendingSlashTimes() {
     }
     span.textContent =
       status === "pending"
-        ? `executes in ${countdownTo(iso)}`
+        ? overdue
+          ? countdownTo(iso)
+          : `executes in ${countdownTo(iso)}`
         : `${status} ${relativeTime(iso) || "—"}`;
   });
 }
