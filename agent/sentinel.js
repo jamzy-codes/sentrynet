@@ -37,6 +37,51 @@ function isRateLimited(ip) {
   return recent.length > RATE_LIMIT_MAX;
 }
 
+// --- Rate-based anomaly detection (spam / rapid-repetition) ---
+const PROOF_SPAM_WINDOW_MS = 120_000; // 2 minutes
+const PROOF_SPAM_THRESHOLD = 20; // proofs from the same node within the window
+const REGISTRATION_SPAM_WINDOW_MS = 600_000; // 10 minutes
+const REGISTRATION_SPAM_THRESHOLD = 3; // registrations from the same owner within the window
+
+const proofSubmissionLog = new Map(); // nodeId -> recent submission timestamps
+const registrationLog = new Map(); // owner -> recent registration timestamps
+const spamAlertCooldown = new Map(); // "type:key" -> timestamp of last alert fired
+
+// Sliding-window counter: records this event now, prunes anything older than
+// windowMs, and returns true once the count within the window exceeds threshold.
+function isSpamBurst(log, key, windowMs, threshold) {
+  const now = Date.now();
+  const recent = (log.get(key) || []).filter((t) => now - t < windowMs);
+  recent.push(now);
+  log.set(key, recent);
+  return recent.length > threshold;
+}
+
+// Prevents re-alerting/re-slashing on every single event once a burst is
+// already over threshold — one alert per burst, not one per excess event.
+function shouldAlertOnBurst(cooldownKey, windowMs) {
+  const now = Date.now();
+  const last = spamAlertCooldown.get(cooldownKey);
+  if (last && now - last < windowMs) return false;
+  spamAlertCooldown.set(cooldownKey, now);
+  return true;
+}
+
+const registrationNodeIdsByOwner = new Map(); // owner -> [{ timestamp, nodeId }] within the window
+
+// Tracks which distinct nodeIds an owner has registered recently, so the
+// anomaly report can describe the real pattern (one owner, many new nodes)
+// instead of just the single most-recent nodeId.
+function recordRegistrationNodeId(owner, nodeId, windowMs) {
+  const now = Date.now();
+  const recent = (registrationNodeIdsByOwner.get(owner) || []).filter(
+    (e) => now - e.timestamp < windowMs,
+  );
+  recent.push({ timestamp: now, nodeId });
+  registrationNodeIdsByOwner.set(owner, recent);
+  return recent.map((e) => e.nodeId);
+}
+
 if (!CONTRACT_ADDRESS)
   throw new Error(
     "Set CONTRACT_ADDRESS in .env to your deployed NodeRegistry address",
@@ -325,12 +370,99 @@ async function handleLog(log) {
   if (name === "NodeRegistered") {
     nodesRegistered += 1;
     console.log(`[info] Node registered: "${args.nodeId}" by ${args.owner}`);
+
+    const recentNodeIds = recordRegistrationNodeId(
+      args.owner,
+      args.nodeId,
+      REGISTRATION_SPAM_WINDOW_MS,
+    );
+
+    if (
+      isSpamBurst(
+        registrationLog,
+        args.owner,
+        REGISTRATION_SPAM_WINDOW_MS,
+        REGISTRATION_SPAM_THRESHOLD,
+      ) &&
+      shouldAlertOnBurst(`reg:${args.owner}`, REGISTRATION_SPAM_WINDOW_MS)
+    ) {
+      console.log(
+        `[ANOMALY] Rapid re-registration detected from ${args.owner}`,
+      );
+      const details = {
+        owner: args.owner,
+        pattern:
+          "One owner address registered multiple distinct new nodeIds in a short window. This is NOT the same node repeatedly re-registering itself; NodeRegistry.sol does not allow re-registering an already-used nodeId.",
+        nodeIdsRegistered: recentNodeIds,
+        registrationCount: recentNodeIds.length,
+        mostRecentNodeId: args.nodeId,
+        windowMs: REGISTRATION_SPAM_WINDOW_MS,
+        threshold: REGISTRATION_SPAM_THRESHOLD,
+        timestamp: new Date(Number(args.timestamp) * 1000).toISOString(),
+      };
+      const report = await generateReport(
+        "Rapid Multi-Node Registration by Single Owner",
+        details,
+      );
+      printAlert(`Rapid Re-Registration — Owner "${args.owner}"`, report);
+      await recordAlert({
+        type: "RapidReregistration",
+        severity: "medium",
+        nodeId: args.nodeId,
+        txHash,
+        logIndex: log.index,
+        details,
+        report,
+      });
+      await trySlash(
+        args.nodeId,
+        "Rapid re-registration (spam)",
+        `${txHash}-${log.index}`,
+      );
+    }
   } else if (name === "ProofSubmitted") {
     console.log(
       `[info] Proof submitted: "${
         args.nodeId
       }" claimed output ${args.outputClaimed.toString()}`,
     );
+
+    if (
+      isSpamBurst(
+        proofSubmissionLog,
+        args.nodeId,
+        PROOF_SPAM_WINDOW_MS,
+        PROOF_SPAM_THRESHOLD,
+      ) &&
+      shouldAlertOnBurst(`proof:${args.nodeId}`, PROOF_SPAM_WINDOW_MS)
+    ) {
+      console.log(
+        `[ANOMALY] Proof submission spam detected on "${args.nodeId}"`,
+      );
+      const details = {
+        nodeId: args.nodeId,
+        submitter: args.submitter,
+        windowMs: PROOF_SPAM_WINDOW_MS,
+        threshold: PROOF_SPAM_THRESHOLD,
+        timestamp: new Date(Number(args.timestamp) * 1000).toISOString(),
+      };
+      const report = await generateReport("Proof Submission Spam", details);
+      printAlert(`Proof Submission Spam — Node "${args.nodeId}"`, report);
+      await recordAlert({
+        type: "ProofSubmissionSpam",
+        severity: "medium",
+        nodeId: args.nodeId,
+        txHash,
+        logIndex: log.index,
+        details,
+        report,
+      });
+      await trySlash(
+        args.nodeId,
+        "Proof submission spam",
+        `${txHash}-${log.index}`,
+      );
+    }
   } else if (name === "ImplausibleOutputFlag") {
     console.log(`[ANOMALY] Implausible output detected on "${args.nodeId}"`);
     const details = {

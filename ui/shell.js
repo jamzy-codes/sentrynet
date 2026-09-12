@@ -1560,6 +1560,12 @@ function renderVpDetail(container, alert) {
     : "";
 
   const reportHtml = renderReport(alert.report);
+  const bondHtml = `<div class="vp-bond-body" id="vp-bond-body">${[1, 2, 3]
+    .map(
+      () =>
+        `<div class="vp-row"><span class="lm-skel" style="width:110px;height:12px"></span><span class="lm-skel" style="width:140px;height:12px"></span></div>`,
+    )
+    .join("")}</div>`;
 
   container.innerHTML = `
     <div class="vp-panels">
@@ -1605,6 +1611,20 @@ function renderVpDetail(container, alert) {
         </div>
       </div>
 
+      <!-- BOTTOM: Bond Status -->
+      <div class="vp-bond-panel" id="vp-bond-panel">
+        <div class="vp-panel-header">
+          <div class="vp-panel-icon vp-icon-purple">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M9 1L3 4V9C3 12.5 5.5 15.5 9 16.5C12.5 15.5 15 12.5 15 9V4L9 1Z" stroke="url(#nav-grad)" stroke-width="1.4" stroke-linejoin="round"/>
+              <path d="M9 6V10M9 12V12.5" stroke="url(#nav-grad)" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <span class="vp-panel-title">Bond Status</span>
+        </div>
+        ${bondHtml}
+      </div>
+
     </div>
   `;
 
@@ -1621,6 +1641,67 @@ function renderVpDetail(container, alert) {
       });
     });
   });
+
+  // Fetch and render bond status for this alert's node
+  if (alert.nodeId) {
+    fetch(`${API_BASE_URL}/api/bond/${encodeURIComponent(alert.nodeId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((bond) => {
+        const body = document.getElementById("vp-bond-body");
+        if (!body) return;
+        if (!bond || !bond.operator) {
+          body.innerHTML = `<p class="vp-no-report">No bond posted for this node.</p>`;
+          return;
+        }
+        const unbondingAtNum = Number(bond.unbondingAt);
+        const unbondingStatus =
+          unbondingAtNum > 0
+            ? `Unbonding — funds unlock ${formatUTC(
+                new Date(unbondingAtNum * 1000).toISOString(),
+              )}`
+            : "Not unbonding";
+        body.innerHTML = `
+          <div class="vp-row">
+            <span class="vp-row-label">Operator</span>
+            <span class="mono vp-mono-val" title="${escAttr(bond.operator)}">${shortHash(
+              bond.operator,
+              6,
+              5,
+            )}</span>
+            <span class="vp-row-copy"><button class="vp-copy-btn" data-copy="${escAttr(
+              bond.operator,
+            )}" aria-label="Copy Operator">${copySvg()}</button></span>
+          </div>
+          <div class="vp-row">
+            <span class="vp-row-label">Bonded Amount</span>
+            <span class="mono vp-mono-val">${escHTML(bond.amount)} BOT</span>
+            <span class="vp-row-copy"></span>
+          </div>
+          <div class="vp-row">
+            <span class="vp-row-label">Unbonding Status</span>
+            <span class="vp-plain-val">${escHTML(unbondingStatus)}</span>
+            <span class="vp-row-copy"></span>
+          </div>
+        `;
+        body.querySelectorAll(".vp-copy-btn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+              btn.classList.add("copied");
+              btn.innerHTML = checkSvg();
+              setTimeout(() => {
+                btn.classList.remove("copied");
+                btn.innerHTML = copySvg();
+              }, 1800);
+            });
+          });
+        });
+      })
+      .catch(() => {
+        const body = document.getElementById("vp-bond-body");
+        if (body)
+          body.innerHTML = `<p class="vp-no-report">Bond info unavailable.</p>`;
+      });
+  }
 }
 
 // ─── Notification button ───────────────────────────────
