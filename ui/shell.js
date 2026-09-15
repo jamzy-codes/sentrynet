@@ -15,7 +15,13 @@ let _activePoll = null;
 let _relativeTimer = null; // LM page: updates relative timestamps
 let _lmRenderedIds = new Set(); // LM page: tracks which alert IDs are in the DOM
 let _lmFilter = "all"; // LM page: current severity filter
+let _lmFilterOpen = false;
 let _pageParams = {}; // params passed to the current page (e.g. alertId)
+let _notificationAlerts = [];
+let _notificationReadIds = new Set();
+let _notificationDropdownOpen = false;
+let _liveStatus = { connected: false, lastSuccessfulAt: null };
+let _liveDropdownOpen = false;
 
 // ─── Page Registry ────────────────────────────────────
 const PAGES = {
@@ -47,6 +53,7 @@ function navigateTo(pageId, params = {}) {
   }
   _lmRenderedIds = new Set();
   _lmFilter = "all";
+  _lmFilterOpen = false;
 
   navItems.forEach((btn) =>
     btn.classList.toggle("active", btn.dataset.page === pageId),
@@ -689,14 +696,14 @@ function populateIdentityPage(d) {
   rowsEl.innerHTML = rows
     .map(
       (r) => `
-    <div class="ai-row">
+    <div class="ai-row${r.url ? " ai-copyable" : ""}">
       <span class="ai-row-label">${r.label}</span>
       <span class="${
         r.mono ? "ai-row-value" : "ai-row-value plain"
       }" title="${escAttr(r.full || "")}">${escHTML(r.value)}</span>
-      <span class="ai-row-actions">
+      ${r.url ? `<span class="ai-row-actions">` : ""}
         ${
-          r.full
+          r.full && r.url
             ? `<button class="ai-copy-btn" data-copy="${escAttr(
                 r.full,
               )}" aria-label="Copy ${r.label}">${copySvg()}</button>`
@@ -709,7 +716,7 @@ function populateIdentityPage(d) {
               )}" target="_blank" rel="noopener">View on Explorer <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 8L8 2M5 2H8V5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></a>`
             : ""
         }
-      </span>
+      ${r.url ? `</span>` : ""}
     </div>`,
     )
     .join("");
@@ -905,14 +912,17 @@ function renderLiveMonitoring() {
           <div class="lm-feed-subtitle">Real-time security events and verifications.</div>
         </div>
         <div class="lm-filter-wrap">
-          <select class="lm-severity-select" id="lm-filter" aria-label="Filter by severity">
-            <option value="all">All Severities</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-          </select>
-          <svg class="lm-filter-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          <button class="lm-severity-select" id="lm-filter-btn" type="button" aria-label="Filter by severity" aria-expanded="false" aria-controls="lm-filter-menu">
+            <span id="lm-filter-label">All Severities</span>
+            <svg class="lm-filter-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="lm-filter-menu" id="lm-filter-menu" hidden role="listbox" aria-label="Severity options">
+            <button type="button" class="lm-filter-option is-selected" data-value="all" role="option" aria-selected="true">All Severities<span class="lm-filter-check" aria-hidden="true">✓</span></button>
+            <button type="button" class="lm-filter-option" data-value="high" role="option" aria-selected="false">High<span class="lm-filter-check" aria-hidden="true">✓</span></button>
+            <button type="button" class="lm-filter-option" data-value="medium" role="option" aria-selected="false">Medium<span class="lm-filter-check" aria-hidden="true">✓</span></button>
+          </div>
         </div>
       </div>
       <div class="lm-feed-list" id="lm-feed-list">
@@ -936,10 +946,33 @@ function renderLiveMonitoring() {
     </div>
   `;
 
-  // Wire severity filter
-  page.querySelector("#lm-filter").addEventListener("change", (e) => {
-    _lmFilter = e.target.value;
-    applyLmFilter();
+  // Wire custom severity filter
+  const filterButton = page.querySelector("#lm-filter-btn");
+  const filterMenu = page.querySelector("#lm-filter-menu");
+  const filterLabel = page.querySelector("#lm-filter-label");
+  const filterSection = page.querySelector(".lm-feed-section");
+  filterButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    _lmFilterOpen = !_lmFilterOpen;
+    filterMenu.hidden = !_lmFilterOpen;
+    filterSection.classList.toggle("lm-filter-open", _lmFilterOpen);
+    filterButton.setAttribute("aria-expanded", String(_lmFilterOpen));
+  });
+  filterMenu.querySelectorAll(".lm-filter-option").forEach((option) => {
+    option.addEventListener("click", () => {
+      _lmFilter = option.dataset.value;
+      filterLabel.textContent = option.textContent.replace("✓", "").trim();
+      filterMenu.querySelectorAll(".lm-filter-option").forEach((item) => {
+        const selected = item === option;
+        item.classList.toggle("is-selected", selected);
+        item.setAttribute("aria-selected", String(selected));
+      });
+      _lmFilterOpen = false;
+      filterMenu.hidden = true;
+      filterSection.classList.remove("lm-filter-open");
+      filterButton.setAttribute("aria-expanded", "false");
+      applyLmFilter();
+    });
   });
 
   // Initial load + poll
@@ -1469,6 +1502,12 @@ function renderVpDetail(container, alert) {
   const sevClass =
     sev === "high" ? "sev-high" : sev === "medium" ? "sev-medium" : "sev-info";
   const sevLabel = sevToLabel(sev);
+  const copyableDetailKeys = new Set([
+    "owner",
+    "submitter",
+    "salt",
+    "operationId",
+  ]);
 
   // ── Fixed rows ───────────────────────────────────────
   const fixedRows = [
@@ -1487,7 +1526,7 @@ function renderVpDetail(container, alert) {
     },
     {
       label: "Transaction Hash",
-      value: shortHash(alert.txHash, 10, 6),
+      value: shortHash(alert.txHash, 6, 4),
       mono: true,
       full: alert.txHash,
     },
@@ -1505,11 +1544,20 @@ function renderVpDetail(container, alert) {
   if (alert.details && typeof alert.details === "object") {
     for (const [k, v] of Object.entries(alert.details)) {
       if (v == null) continue;
+      if (
+        k === "nodeId" ||
+        (k === "mostRecentNodeId" && String(v) === String(alert.nodeId))
+      )
+        continue;
       detailRows.push({
         label: humanizeKey(k),
-        value: String(v),
+        value:
+          k === "owner" || k === "submitter"
+            ? shortHash(String(v), 6, 5)
+            : String(v),
         mono: true,
         full: String(v),
+        copyable: copyableDetailKeys.has(k),
       });
     }
   }
@@ -1534,11 +1582,13 @@ function renderVpDetail(container, alert) {
           r.mono ? "mono vp-mono-val" : "vp-plain-val"
         }" title="${escAttr(r.full || "")}">${escHTML(r.value)}</span>`;
       }
-      const copyBtn = r.full
-        ? `<button class="vp-copy-btn" data-copy="${escAttr(
-            r.full,
-          )}" aria-label="Copy ${r.label}">${copySvg()}</button>`
-        : "";
+      const copyBtn =
+        r.full &&
+        (r.copyable || r.label === "Node ID" || r.label === "Transaction Hash")
+          ? `<button class="vp-copy-btn" data-copy="${escAttr(
+              r.full,
+            )}" aria-label="Copy ${r.label}">${copySvg()}</button>`
+          : "";
       return `
       <div class="vp-row">
         <span class="vp-row-label">${escHTML(r.label)}</span>
@@ -1599,7 +1649,7 @@ function renderVpDetail(container, alert) {
           <span class="vp-gemini-tag">&#10022; Generated by Gemini</span>
         </div>
         <div class="vp-report-body">${reportHtml}</div>
-        <div class="vp-status-row">
+                <div class="vp-status-row">
           <span class="vp-status-label">Verification Status</span>
           <span class="vp-verified-badge">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
@@ -1611,13 +1661,14 @@ function renderVpDetail(container, alert) {
         </div>
       </div>
 
-      <!-- BOTTOM: Bond Status -->
+      <!-- THIRD COLUMN: Bond Status -->
       <div class="vp-bond-panel" id="vp-bond-panel">
         <div class="vp-panel-header">
           <div class="vp-panel-icon vp-icon-purple">
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M9 1L3 4V9C3 12.5 5.5 15.5 9 16.5C12.5 15.5 15 12.5 15 9V4L9 1Z" stroke="url(#nav-grad)" stroke-width="1.4" stroke-linejoin="round"/>
-              <path d="M9 6V10M9 12V12.5" stroke="url(#nav-grad)" stroke-width="1.4" stroke-linecap="round"/>
+              <rect x="4" y="8" width="10" height="8" rx="1.5" stroke="url(#nav-grad)" stroke-width="1.4"/>
+              <path d="M6 8V5.5C6 3.567 7.567 2 9.5 2C11.238 2 12.674 3.276 12.938 4.938" stroke="url(#nav-grad)" stroke-width="1.4" stroke-linecap="round"/>
+              <circle cx="9" cy="12" r="1.1" fill="url(#nav-grad)"/>
             </svg>
           </div>
           <span class="vp-panel-title">Bond Status</span>
@@ -1650,7 +1701,13 @@ function renderVpDetail(container, alert) {
         const body = document.getElementById("vp-bond-body");
         if (!body) return;
         if (!bond || !bond.operator) {
-          body.innerHTML = `<p class="vp-no-report">No bond posted for this node.</p>`;
+          body.innerHTML = `<div class="vp-bond-empty">
+            <svg width="28" height="28" viewBox="0 0 18 18" fill="none">
+              <rect x="4" y="8" width="10" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M6 8V5.5C6 3.567 7.567 2 9.5 2C11.238 2 12.674 3.276 12.938 4.938" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            <p>No bond posted for this node.</p>
+          </div>`;
           return;
         }
         const unbondingAtNum = Number(bond.unbondingAt);
@@ -1663,11 +1720,9 @@ function renderVpDetail(container, alert) {
         body.innerHTML = `
           <div class="vp-row">
             <span class="vp-row-label">Operator</span>
-            <span class="mono vp-mono-val" title="${escAttr(bond.operator)}">${shortHash(
+            <span class="mono vp-mono-val" title="${escAttr(
               bond.operator,
-              6,
-              5,
-            )}</span>
+            )}">${shortHash(bond.operator, 6, 5)}</span>
             <span class="vp-row-copy"><button class="vp-copy-btn" data-copy="${escAttr(
               bond.operator,
             )}" aria-label="Copy Operator">${copySvg()}</button></span>
@@ -1704,15 +1759,297 @@ function renderVpDetail(container, alert) {
   }
 }
 
-// ─── Notification button ───────────────────────────────
-document.getElementById("notif-btn").addEventListener("click", function () {
-  const badge = document.getElementById("notif-badge");
-  if (badge) {
-    badge.style.transform = "scale(0)";
-    badge.style.transition = "transform 180ms ease";
-    setTimeout(() => badge.remove(), 200);
+// ─── Notification center ───────────────────────────────
+function updateLiveIndicator() {
+  const button = document.getElementById("live-indicator");
+  const dot = button?.querySelector(".live-dot");
+  if (!button || !dot) return;
+  button.classList.toggle("is-disconnected", !_liveStatus.connected);
+  button.setAttribute(
+    "aria-label",
+    _liveStatus.connected ? "Live feed connected" : "Live feed reconnecting",
+  );
+  button.title = _liveStatus.connected
+    ? "Live feed connected"
+    : "Live feed reconnecting";
+  dot.setAttribute(
+    "aria-label",
+    _liveStatus.connected ? "Connected" : "Reconnecting",
+  );
+}
+
+function renderLiveDropdown() {
+  const panel = document.getElementById("live-dropdown");
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="live-dropdown-header">Live status</div>
+    <div class="live-status-row">
+      <span class="live-status-label">API endpoint</span>
+      <span class="live-status-value live-status-endpoint mono" title="${escAttr(
+        API_BASE_URL,
+      )}">${escHTML(API_BASE_URL)}</span>
+    </div>
+    <div class="live-status-row">
+      <span class="live-status-label">Connection</span>
+      <span class="live-status-value ${
+        _liveStatus.connected ? "is-connected" : "is-disconnected"
+      }">${_liveStatus.connected ? "Connected" : "Reconnecting"}</span>
+    </div>
+    <div class="live-status-row">
+      <span class="live-status-label">Last synced</span>
+      <span class="live-status-value mono">${escHTML(
+        _liveStatus.lastSuccessfulAt
+          ? relativeTime(_liveStatus.lastSuccessfulAt)
+          : "—",
+      )}</span>
+    </div>
+  `;
+}
+
+async function checkLiveHeartbeat() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/identity`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await response.json();
+    _liveStatus = {
+      connected: true,
+      lastSuccessfulAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    _liveStatus.connected = false;
+    console.warn("[Live] heartbeat failed:", err.message);
   }
-});
+  updateLiveIndicator();
+  if (_liveDropdownOpen) renderLiveDropdown();
+}
+
+function initLiveStatus() {
+  const button = document.getElementById("live-indicator");
+  const panel = document.createElement("div");
+  panel.id = "live-dropdown";
+  panel.hidden = true;
+  document.getElementById("topbar-right")?.appendChild(panel);
+  button?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (_liveDropdownOpen) {
+      _liveDropdownOpen = false;
+      panel.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    } else {
+      _liveDropdownOpen = true;
+      _lmFilterOpen = false;
+      document.getElementById("lm-filter-menu")?.setAttribute("hidden", "");
+      document
+        .querySelector(".lm-feed-section")
+        ?.classList.remove("lm-filter-open");
+      document
+        .getElementById("lm-filter-btn")
+        ?.setAttribute("aria-expanded", "false");
+      _notificationDropdownOpen = false;
+      document
+        .getElementById("notification-dropdown")
+        ?.setAttribute("hidden", "");
+      document
+        .getElementById("notif-btn")
+        ?.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-expanded", "true");
+      panel.hidden = false;
+      renderLiveDropdown();
+    }
+  });
+  checkLiveHeartbeat();
+  setInterval(checkLiveHeartbeat, 6000);
+}
+
+async function loadNotifications() {
+  try {
+    const [alertsRes, readIdsRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/alerts`),
+      fetch(`${API_BASE_URL}/api/notifications/read-ids`),
+    ]);
+    if (!alertsRes.ok || !readIdsRes.ok)
+      throw new Error("Notification API unavailable");
+    const alerts = await alertsRes.json();
+    const readIds = await readIdsRes.json();
+    _notificationAlerts = Array.isArray(alerts)
+      ? alerts
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(b.detectedAt).getTime() -
+              new Date(a.detectedAt).getTime(),
+          )
+          .slice(0, 10)
+      : [];
+    _notificationReadIds = new Set([
+      ..._notificationReadIds,
+      ...(Array.isArray(readIds.readIds) ? readIds.readIds : []),
+    ]);
+    updateNotificationBadge();
+    if (_notificationDropdownOpen) renderNotificationDropdown();
+  } catch (err) {
+    console.warn("[Notifications] fetch failed:", err.message);
+  }
+}
+
+function isNotificationUnread(alert) {
+  return !_notificationReadIds.has(alert.id);
+}
+
+function updateNotificationBadge() {
+  const badge = document.getElementById("notif-badge");
+  const button = document.getElementById("notif-btn");
+  if (!badge || !button) return;
+  const unreadCount = _notificationAlerts.filter(isNotificationUnread).length;
+  badge.textContent = String(unreadCount);
+  badge.hidden = unreadCount === 0;
+  button.setAttribute(
+    "aria-label",
+    unreadCount ? `${unreadCount} unread notifications` : "Notifications",
+  );
+}
+
+function notificationSeverityClass(alert) {
+  const severity = (alert.severity || "info").toLowerCase();
+  return severity === "high"
+    ? "sev-high"
+    : severity === "medium"
+    ? "sev-medium"
+    : severity === "success"
+    ? "sev-success"
+    : "sev-info";
+}
+
+function renderNotificationDropdown() {
+  const panel = document.getElementById("notification-dropdown");
+  if (!panel) return;
+  const scrollTop = _notificationDropdownOpen ? panel.scrollTop : 0;
+  const unreadCount = _notificationAlerts.filter(isNotificationUnread).length;
+  panel.innerHTML = `
+    <div class="notification-dropdown-header">
+      <span>Notifications</span>
+      <span class="notification-dropdown-count">${
+        _notificationAlerts.length
+      }/10</span>
+    </div>
+    ${
+      _notificationAlerts.length
+        ? `<div class="notification-list">${_notificationAlerts
+            .map((alert) => {
+              const severityClass = notificationSeverityClass(alert);
+              const unread = isNotificationUnread(alert);
+              return `<button class="notification-row ${severityClass}${
+                unread ? " is-unread" : ""
+              }" data-alert-id="${escAttr(alert.id || "")}">
+                <span class="notification-row-dot ${severityClass}"></span>
+                <span class="notification-row-main">
+                  <span class="notification-row-type">${escHTML(
+                    humanizeType(alert.type),
+                  )}</span>
+                  <span class="notification-row-node">Node ${escHTML(
+                    alert.nodeId || "—",
+                  )}</span>
+                </span>
+                <span class="notification-row-time">${escHTML(
+                  relativeTime(alert.detectedAt),
+                )}</span>
+              </button>`;
+            })
+            .join("")}</div>`
+        : `<div class="notification-empty">No new alerts</div>`
+    }
+    ${
+      _notificationAlerts.length && unreadCount === 0
+        ? `<div class="notification-empty notification-empty-note">No new alerts</div>`
+        : ""
+    }
+  `;
+  if (_notificationDropdownOpen) panel.scrollTop = scrollTop;
+  panel.querySelectorAll(".notification-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const alertId = row.dataset.alertId;
+      _notificationReadIds.add(alertId);
+      updateNotificationBadge();
+      row.classList.remove("is-unread");
+      panel.hidden = true;
+      _notificationDropdownOpen = false;
+      fetch(`${API_BASE_URL}/api/notifications/mark-read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alertId }),
+      }).catch((err) => {
+        console.warn("[Notifications] mark read failed:", err.message);
+      });
+      navigateTo("verification", { alertId });
+    });
+  });
+}
+
+function initNotificationCenter() {
+  const button = document.getElementById("notif-btn");
+  const panel = document.createElement("div");
+  panel.id = "notification-dropdown";
+  panel.hidden = true;
+  document.getElementById("topbar-right")?.appendChild(panel);
+  button?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (_notificationDropdownOpen) {
+      _notificationDropdownOpen = false;
+      panel.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    } else {
+      _liveDropdownOpen = false;
+      document.getElementById("live-dropdown")?.setAttribute("hidden", "");
+      document
+        .getElementById("live-indicator")
+        ?.setAttribute("aria-expanded", "false");
+      _lmFilterOpen = false;
+      document.getElementById("lm-filter-menu")?.setAttribute("hidden", "");
+      document
+        .querySelector(".lm-feed-section")
+        ?.classList.remove("lm-filter-open");
+      document
+        .getElementById("lm-filter-btn")
+        ?.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-expanded", "true");
+      _notificationDropdownOpen = true;
+      panel.hidden = false;
+      renderNotificationDropdown();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    const liveButton = document.getElementById("live-indicator");
+    const livePanel = document.getElementById("live-dropdown");
+    const filterButton = document.getElementById("lm-filter-btn");
+    const filterPanel = document.getElementById("lm-filter-menu");
+    if (
+      event.target.closest(
+        "#notif-btn, #notification-dropdown, #live-indicator, #live-dropdown, #lm-filter-btn, #lm-filter-menu",
+      )
+    )
+      return;
+    if (_notificationDropdownOpen) {
+      _notificationDropdownOpen = false;
+      panel.hidden = true;
+      button?.setAttribute("aria-expanded", "false");
+    }
+    if (_liveDropdownOpen) {
+      _liveDropdownOpen = false;
+      if (livePanel) livePanel.hidden = true;
+      liveButton?.setAttribute("aria-expanded", "false");
+    }
+    if (_lmFilterOpen) {
+      _lmFilterOpen = false;
+      if (filterPanel) filterPanel.hidden = true;
+      filterPanel
+        ?.closest(".lm-feed-section")
+        ?.classList.remove("lm-filter-open");
+      filterButton?.setAttribute("aria-expanded", "false");
+    }
+  });
+  loadNotifications();
+  setInterval(loadNotifications, 6000);
+}
 
 // ─── Sidebar footer: fetch real agent address ─────────
 async function fetchIdentity() {
@@ -1740,4 +2077,6 @@ async function fetchIdentity() {
   const initial = PAGES[hash] ? hash : "overview";
   navigateTo(initial);
   fetchIdentity();
+  initNotificationCenter();
+  initLiveStatus();
 })();

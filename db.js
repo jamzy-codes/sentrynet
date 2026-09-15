@@ -43,6 +43,34 @@ export async function initDb() {
     )
   `);
   console.log("[db] Turso pending_slashes table ready");
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS read_notifications (
+      alert_id TEXT PRIMARY KEY,
+      read_at TEXT
+    )
+  `);
+  console.log("[db] Turso read_notifications table ready");
+}
+
+export async function getReadNotificationIds() {
+  const result = await client.execute(
+    `SELECT alert_id FROM read_notifications`,
+  );
+  return result.rows.map((row) => row.alert_id);
+}
+
+export async function markNotificationRead(alertId) {
+  const readAt = new Date().toISOString();
+  await client.execute({
+    sql: `
+      INSERT INTO read_notifications (alert_id, read_at)
+      VALUES (?, ?)
+      ON CONFLICT(alert_id) DO UPDATE SET read_at = excluded.read_at
+    `,
+    args: [alertId, readAt],
+  });
+  return readAt;
 }
 
 // Insert a new alert. Call this everywhere the old code did

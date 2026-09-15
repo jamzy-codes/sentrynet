@@ -9,6 +9,8 @@ import {
   insertPendingSlash,
   updatePendingSlashStatus,
   getPendingSlashes,
+  getReadNotificationIds,
+  markNotificationRead,
 } from "../db.js";
 
 dotenv.config();
@@ -144,11 +146,61 @@ const timelock =
 // 1. Flag the node immediately (locks its funds against withdrawal while under review).
 // 2. Schedule the actual slash() call on the timelock, it only executes after
 //    the delay window, and can be cancelled by anyone holding CANCELLER_ROLE.
+// Sends a contract call with automatic retry for wallet-contention errors.
+// This project's wallet is shared between the agent and manual testing
+// scripts, so a concurrent external transaction can collide with the
+// agent's own send in two different ways:
+//   - NONCE_EXPIRED / "nonce too low": the nonce was already consumed and
+//     mined by another transaction before this one landed.
+//   - REPLACEMENT_UNDERPRICED: the nonce is currently occupied by another
+//     transaction still sitting unconfirmed in the mempool.
+// Both are the same underlying problem (shared wallet contention), not an
+// issue with the call itself. On either error, wait briefly for the mempool
+// to settle, refetch the nonce, and bump the gas price so the retry is a
+// valid replacement either way (harmless overpay if the slot was actually
+// free, a valid forced replacement if something is still sitting there).
+async function sendWithNonceRetry(sendFn, maxRetries = 3) {
+  let overrides = {};
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await sendFn(overrides);
+    } catch (err) {
+      const isContentionError =
+        err.code === "NONCE_EXPIRED" ||
+        err.code === "REPLACEMENT_UNDERPRICED" ||
+        /nonce too low|nonce has already been used|replacement transaction underpriced/i.test(
+          err.message || "",
+        );
+      if (!isContentionError || attempt === maxRetries) throw err;
+      console.warn(
+        `[bond] Wallet contention detected (${err.code}), attempt ${
+          attempt + 1
+        }/${maxRetries + 1}, waiting and retrying with a bumped gas price...`,
+      );
+      await sleep(5000);
+      const freshNonce = await provider.getTransactionCount(
+        wallet.address,
+        "pending",
+      );
+      const feeData = await provider.getFeeData();
+      const bumpedGasPrice = feeData.gasPrice
+        ? (feeData.gasPrice * 130n) / 100n
+        : undefined;
+      overrides = {
+        nonce: freshNonce,
+        ...(bumpedGasPrice ? { gasPrice: bumpedGasPrice } : {}),
+      };
+    }
+  }
+}
+
 async function trySlash(nodeId, reason, relatedAlertId) {
   if (!bondManager || !timelock) return;
 
   try {
-    const flagTx = await bondManager.flagPendingSlash(nodeId);
+    const flagTx = await sendWithNonceRetry((overrides) =>
+      bondManager.flagPendingSlash(nodeId, overrides),
+    );
     await flagTx.wait();
     console.log(
       `[bond] Flagged pending slash for "${nodeId}" (tx: ${flagTx.hash})`,
@@ -179,13 +231,16 @@ async function trySlash(nodeId, reason, relatedAlertId) {
       salt,
     );
 
-    const tx = await timelock.schedule(
-      BOND_MANAGER_ADDRESS,
-      0,
-      data,
-      ethers.ZeroHash,
-      salt,
-      minDelay,
+    const tx = await sendWithNonceRetry((overrides) =>
+      timelock.schedule(
+        BOND_MANAGER_ADDRESS,
+        0,
+        data,
+        ethers.ZeroHash,
+        salt,
+        minDelay,
+        overrides,
+      ),
     );
     await tx.wait();
     console.log(
@@ -568,6 +623,38 @@ function startApiServer() {
         const alerts = await getAlerts();
         res.writeHead(200);
         res.end(JSON.stringify(alerts, null, 2));
+        return;
+      }
+      if (req.method === "GET" && req.url === "/api/notifications/read-ids") {
+        const readIds = await getReadNotificationIds();
+        res.writeHead(200);
+        res.end(JSON.stringify({ readIds }));
+        return;
+      }
+      if (req.method === "POST" && req.url === "/api/notifications/mark-read") {
+        const body = await new Promise((resolve, reject) => {
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => {
+            raw += chunk;
+          });
+          req.on("end", () => {
+            try {
+              resolve(JSON.parse(raw));
+            } catch {
+              reject(new Error("Invalid JSON body"));
+            }
+          });
+          req.on("error", reject);
+        });
+        if (!body?.alertId || typeof body.alertId !== "string") { 
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "alertId is required" }));
+          return;
+        }
+        await markNotificationRead(body.alertId);
+        res.writeHead(200);
+        res.end(JSON.stringify({ ok: true }));
         return;
       }
       if (req.url.startsWith("/api/bond/")) {

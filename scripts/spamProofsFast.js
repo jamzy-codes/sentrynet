@@ -4,16 +4,19 @@
 //
 // Unlike running `npx hardhat run scripts/submitProof.ts` in a loop (which pays
 // a full Hardhat process-boot cost on every single iteration, easily pushing
-// 25 submissions past the 2-minute sliding window), this script opens ONE
-// connection and fires all submissions with a small stagger between them
-// using a manually managed nonce, so they land on-chain within seconds
-// instead of minutes, while avoiding the nonce/mempool-ordering issues seen
-// when sending everything with zero delay against a public testnet RPC.
+// submissions past the 2-minute sliding window), this script opens ONE
+// connection and fires submissions with a small stagger between them using a
+// manually managed nonce, so they land on-chain within seconds instead of
+// minutes.
 //
-// Sends 30 by default (not just 20) to build in margin: NodeRegistry.sol has
-// no contract-level rate limiting, so any failures seen are transient
-// network/RPC issues, not a deliberate block — a few stragglers failing
-// should still comfortably clear the 20-submission threshold.
+// RETRY LOGIC:
+// rpc.bohr.life has shown a consistent ~35-45% transaction failure rate under
+// rapid/bursty load in testing (confirmed via scripts/diagnoseRevert.js to be
+// an RPC-level issue — no nonce collisions, no contract-level rate limiting,
+// no revert reason data returned at all). Since we can't fix a third-party
+// RPC's reliability, this script targets a GUARANTEED number of successful
+// on-chain confirmations by automatically retrying failures with a fresh
+// nonce, instead of sending a fixed batch once and hoping enough survive.
 //
 // Usage (PowerShell):
 //   $env:CONTRACT_ADDRESS="0x170F34cc6EF948eb4e2b56DA643a80596d854Aa3"
@@ -30,12 +33,9 @@ dotenv.config();
 const RPC_URL = "https://rpc.bohr.life";
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const NODE_ID = process.env.NODE_ID || "test-spam-1";
-const COUNT = Number(process.env.SPAM_COUNT || 30);
-// Small delay between sends. Zero delay caused ~36% of transactions to
-// revert in testing, likely a nonce/mempool-ordering race against a
-// load-balanced public RPC. 150ms keeps 30 sends well under 5 seconds
-// total, comfortably inside the 2-minute detection window, while giving
-// the RPC time to settle each nonce before the next arrives.
+// The number of CONFIRMED SUCCESSES to guarantee, not just the number sent.
+const TARGET_SUCCESSES = Number(process.env.SPAM_TARGET || 25);
+const MAX_ROUNDS = Number(process.env.SPAM_MAX_ROUNDS || 5);
 const STAGGER_MS = Number(process.env.SPAM_STAGGER_MS || 150);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,6 +45,31 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const ABI = [
   "function submitProof(string calldata nodeId, uint256 outputClaimed) external",
 ];
+
+async function sendBatch(contract, provider, wallet, count, outputStart) {
+  let nonce = await provider.getTransactionCount(wallet.address, "pending");
+  console.log(`  Starting nonce for this round: ${nonce}`);
+
+  const txs = [];
+  for (let i = 0; i < count; i++) {
+    const outputClaimed = outputStart + i; // stays well under the 100000 implausible-output threshold
+    try {
+      const tx = await contract.submitProof(NODE_ID, BigInt(outputClaimed), { nonce: nonce++ });
+      console.log(`  [${i + 1}/${count}] sent, tx: ${tx.hash}`);
+      txs.push(tx);
+    } catch (err) {
+      console.warn(`  [${i + 1}/${count}] send failed before broadcast:`, err.shortMessage || err.message);
+    }
+    if (i < count - 1) await sleep(STAGGER_MS);
+  }
+
+  console.log(`  All sent for this round. Waiting for confirmations...`);
+  const results = await Promise.allSettled(txs.map((tx) => tx.wait()));
+  const successCount = results.filter((r) => r.status === "fulfilled").length;
+  const failCount = results.length - successCount;
+
+  return { successCount, failCount, lastOutput: outputStart + count };
+}
 
 async function main() {
   if (!CONTRACT_ADDRESS) {
@@ -58,29 +83,44 @@ async function main() {
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
   const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, wallet);
 
-  let nonce = await provider.getTransactionCount(wallet.address, "pending");
+  let totalSuccesses = 0;
+  let outputCursor = 101;
+  let round = 1;
 
-  console.log(`Submitting ${COUNT} proofs for "${NODE_ID}" as fast as possible...`);
-  console.log(`Starting nonce: ${nonce}`);
+  console.log(`Target: ${TARGET_SUCCESSES} confirmed submissions for "${NODE_ID}"`);
+  console.log(`(will retry failures automatically, up to ${MAX_ROUNDS} rounds)`);
+  console.log("");
 
-  const txs = [];
-  for (let i = 1; i <= COUNT; i++) {
-    const outputClaimed = 100 + i; // stays well under the 100000 implausible-output threshold
-    const tx = await contract.submitProof(NODE_ID, BigInt(outputClaimed), { nonce: nonce++ });
-    console.log(`[${i}/${COUNT}] sent, tx: ${tx.hash}`);
-    txs.push(tx);
-    if (i < COUNT) await sleep(STAGGER_MS);
+  while (totalSuccesses < TARGET_SUCCESSES && round <= MAX_ROUNDS) {
+    const remaining = TARGET_SUCCESSES - totalSuccesses;
+    // Send a bit more than strictly remaining to account for the known
+    // failure rate, so most runs finish in fewer rounds.
+    const batchSize = round === 1 ? Math.ceil(remaining * 1.5) : remaining + Math.ceil(remaining * 0.5);
+
+    console.log(`Round ${round}: sending ${batchSize} (need ${remaining} more successes)...`);
+    const { successCount, failCount, lastOutput } = await sendBatch(
+      contract,
+      provider,
+      wallet,
+      batchSize,
+      outputCursor,
+    );
+    outputCursor = lastOutput;
+    totalSuccesses += successCount;
+
+    console.log(`Round ${round} result: ${successCount} succeeded, ${failCount} failed.`);
+    console.log(`Running total: ${totalSuccesses}/${TARGET_SUCCESSES}`);
+    console.log("");
+    round++;
   }
 
-  console.log("All transactions sent. Waiting for confirmations...");
-  const results = await Promise.allSettled(txs.map((tx) => tx.wait()));
-
-  const failed = results.filter((r) => r.status === "rejected");
-  if (failed.length > 0) {
-    console.warn(`${failed.length} of ${COUNT} transactions failed to confirm:`);
-    failed.forEach((f, idx) => console.warn(`  - tx ${idx + 1}:`, f.reason?.message || f.reason));
+  if (totalSuccesses >= TARGET_SUCCESSES) {
+    console.log(`Done. Reached ${totalSuccesses} confirmed submissions (target was ${TARGET_SUCCESSES}).`);
   } else {
-    console.log("All confirmed successfully.");
+    console.warn(
+      `Stopped after ${MAX_ROUNDS} rounds with only ${totalSuccesses}/${TARGET_SUCCESSES} confirmed. ` +
+        `The RPC may be experiencing unusually heavy failure rates right now — try running again, or increase SPAM_MAX_ROUNDS.`,
+    );
   }
 }
 
